@@ -142,90 +142,73 @@ export default function KlythCoin() {
       }
     }
 
-    // Back face: an eclipse emblem with a curved wordmark, so the reverse still
-    // reads as a struck coin rather than a blank disc.
+    // Back face: animated black hole with galaxy debris, redrawn every frame.
     const backCanvas = document.createElement('canvas')
     backCanvas.width = FACE_SIZE
     backCanvas.height = FACE_SIZE
     const backCtx = backCanvas.getContext('2d')
-    if (backCtx) {
-      const c = FACE_SIZE / 2
-      paintFace(backCtx, '#4a3823', '#281f16', '#0f0f13')
-
-      drawRing(backCtx)
-
-      // Soft corona around the eclipse so the emblem sits in a warm halo
-      // instead of floating on the field.
-      const corona = backCtx.createRadialGradient(
-        c,
-        c,
-        c * 0.2,
-        c,
-        c,
-        c * 0.5,
-      )
-      corona.addColorStop(0, 'rgba(224, 166, 75, 0)')
-      corona.addColorStop(0.62, 'rgba(224, 166, 75, 0.1)')
-      corona.addColorStop(0.84, 'rgba(224, 166, 75, 0.26)')
-      corona.addColorStop(1, 'rgba(224, 166, 75, 0)')
-      backCtx.fillStyle = corona
-      backCtx.beginPath()
-      backCtx.arc(c, c, c * 0.5, 0, Math.PI * 2)
-      backCtx.fill()
-
-      // Eclipse body: dark core ringed by a crisp warm edge.
-      backCtx.fillStyle = '#050506'
-      backCtx.beginPath()
-      backCtx.arc(c, c, c * 0.33, 0, Math.PI * 2)
-      backCtx.fill()
-
-      backCtx.strokeStyle = 'rgba(224, 166, 75, 0.9)'
-      backCtx.lineWidth = 5
-      backCtx.beginPath()
-      backCtx.arc(c, c, c * 0.33, 0, Math.PI * 2)
-      backCtx.stroke()
-
-      backCtx.strokeStyle = 'rgba(201, 206, 214, 0.24)'
-      backCtx.lineWidth = 2
-      backCtx.beginPath()
-      backCtx.arc(c, c, c * 0.24, 0, Math.PI * 2)
-      backCtx.stroke()
-
-      // Curved "KALYTH" wordmark along the top arc with emboss effect.
-      const textRadius = c * 0.68
-      const text = 'KALYTH'
-      const charCount = text.length
-      const totalArcAngle = Math.PI * 0.4
-      const startAngle = -Math.PI / 2 - totalArcAngle / 2
-
-      backCtx.textAlign = 'center'
-      backCtx.textBaseline = 'middle'
-      backCtx.font = '600 48px "Space Grotesk", Inter, system-ui, sans-serif'
-
-      for (let i = 0; i < charCount; i += 1) {
-        const angle = startAngle + (i / (charCount - 1)) * totalArcAngle
-        const x = c + Math.cos(angle) * textRadius
-        const y = c + Math.sin(angle) * textRadius
-
-        backCtx.save()
-        backCtx.translate(x, y)
-        backCtx.rotate(angle + Math.PI / 2)
-
-        // Shadow layer for depth.
-        backCtx.fillStyle = 'rgba(0, 0, 0, 0.6)'
-        backCtx.fillText(text[i], 2, 2)
-
-        // Main text layer.
-        backCtx.fillStyle = 'rgba(244, 215, 154, 0.95)'
-        backCtx.fillText(text[i], 0, 0)
-
-        backCtx.restore()
-      }
-    }
 
     const backTexture = new THREE.CanvasTexture(backCanvas)
     backTexture.colorSpace = THREE.SRGBColorSpace
     backTexture.anisotropy = renderer.capabilities.getMaxAnisotropy()
+
+    const debris = Array.from({ length: 46 }, () => ({
+      angle: Math.random() * Math.PI * 2,
+      radius: 30 + Math.random() * (FACE_SIZE / 2 - 90),
+      speed: 0.006 + Math.random() * 0.018,
+      size: 0.9 + Math.random() * 2.3,
+      warm: Math.random() > 0.35,
+    }))
+
+    const drawBackFace = (delta: number) => {
+      if (!backCtx) {
+        return
+      }
+      const c = FACE_SIZE / 2
+
+      // Trails: fade previous frame into the background.
+      backCtx.globalCompositeOperation = 'source-over'
+      backCtx.fillStyle = 'rgba(6, 6, 9, 0.22)'
+      backCtx.fillRect(0, 0, FACE_SIZE, FACE_SIZE)
+
+      // Black hole core.
+      const core = backCtx.createRadialGradient(c, c, 2, c, c, 42)
+      core.addColorStop(0, 'rgba(0, 0, 0, 1)')
+      core.addColorStop(0.55, 'rgba(0, 0, 0, 0.98)')
+      core.addColorStop(0.75, 'rgba(34, 18, 12, 0.92)')
+      core.addColorStop(1, 'rgba(0, 0, 0, 0)')
+      backCtx.fillStyle = core
+      backCtx.beginPath()
+      backCtx.arc(c, c, 42, 0, Math.PI * 2)
+      backCtx.fill()
+
+      // Accretion glow ring around the black hole.
+      const ring = backCtx.createRadialGradient(c, c, 40, c, c, 74)
+      ring.addColorStop(0, 'rgba(224, 166, 75, 0.05)')
+      ring.addColorStop(0.6, 'rgba(224, 166, 75, 0.22)')
+      ring.addColorStop(0.85, 'rgba(224, 166, 75, 0.08)')
+      ring.addColorStop(1, 'rgba(0, 0, 0, 0)')
+      backCtx.fillStyle = ring
+      backCtx.beginPath()
+      backCtx.arc(c, c, 74, 0, Math.PI * 2)
+      backCtx.fill()
+
+      // Galaxy debris particles orbiting the black hole.
+      for (const particle of debris) {
+        particle.angle += particle.speed * delta
+        const x = c + Math.cos(particle.angle) * particle.radius
+        const y = c + Math.sin(particle.angle) * particle.radius
+        const alpha = 0.35 * particle.size
+        backCtx.fillStyle = particle.warm
+          ? `rgba(224, 166, 75, ${alpha})`
+          : `rgba(190, 200, 220, ${alpha * 0.8})`
+        backCtx.beginPath()
+        backCtx.arc(x, y, particle.size, 0, Math.PI * 2)
+        backCtx.fill()
+      }
+
+      backTexture.needsUpdate = true
+    }
 
     const radius = 1.5
     const thickness = 0.2
@@ -421,6 +404,8 @@ export default function KlythCoin() {
 
       const delta = Math.min(clock.getDelta(), 0.05)
       elapsed += delta
+
+      drawBackFace(delta)
 
       const introProgress = Math.min(1, (performance.now() - introStart) / 1400)
       const eased = 1 - Math.pow(1 - introProgress, 3)
