@@ -643,7 +643,10 @@ export function TradePage() {
                   <span className="input-wrap__suffix">KLYTH</span>
                 </div>
                 <span className="field__hint">
-                  KLYTH balance: {balances.loading ? '…' : (balances.nbr ?? '—')}
+                  Tradable: {balances.loading ? '…' : (balances.nbr ?? '—')}
+                  {balances.otherRaw !== null && balances.otherRaw > 0n ? (
+                    <> · Total wallet: {balances.loading ? '…' : (balances.nbrTotal ?? '—')}</>
+                  ) : null}
                 </span>
               </div>
 

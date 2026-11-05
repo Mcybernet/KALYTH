@@ -626,6 +626,16 @@
   font-weight: var(--weight-semibold);
 }
 
+.wallet-balances__item--muted {
+  padding-left: var(--space-3);
+  border-left: var(--border-subtle);
+}
+
+.wallet-balances__item--muted .wallet-balances__label,
+.wallet-balances__item--muted .wallet-balances__value {
+  color: var(--color-text-secondary);
+}
+
 .wallet-balances__error {
   color: var(--color-danger);
   font-size: var(--text-xs);

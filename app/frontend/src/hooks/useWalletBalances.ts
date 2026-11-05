@@ -10,8 +10,11 @@ type WalletBalances = {
   loading: boolean
   sol: string | null
   nbr: string | null
+  nbrTotal: string | null
   solLamports: bigint | null
   nbrRaw: bigint | null
+  nbrTotalRaw: bigint | null
+  otherRaw: bigint | null
   error: string | null
 }
 
@@ -19,9 +22,22 @@ const emptyBalances: WalletBalances = {
   loading: false,
   sol: null,
   nbr: null,
+  nbrTotal: null,
   solLamports: null,
   nbrRaw: null,
+  nbrTotalRaw: null,
+  otherRaw: null,
   error: null,
+}
+
+function formatToken(raw: bigint | null): string | null {
+  if (raw === null) {
+    return null
+  }
+  return (Number(raw) / 10 ** 6).toLocaleString('en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 6,
+  })
 }
 
 export function useWalletBalances(): WalletBalances & { refresh: () => void } {
@@ -56,13 +72,33 @@ export function useWalletBalances(): WalletBalances & { refresh: () => void } {
         const solLamports = BigInt(await connection.getBalance(publicKey as PublicKey))
 
         let nbrRaw = 0n
+        let nbrTotalRaw = 0n
         try {
           const ata = await getAssociatedTokenAddress(KLYTH_MINT, publicKey as PublicKey)
-          const balance = await connection.getTokenAccountBalance(ata)
-          nbrRaw = BigInt(balance.value.amount)
+          const accounts = await connection.getParsedTokenAccountsByOwner(publicKey as PublicKey, {
+            mint: KLYTH_MINT,
+          })
+
+          for (const entry of accounts.value) {
+            const data = entry.account.data as {
+              parsed?: { info?: { tokenAmount?: { amount?: string } } }
+            }
+            const amount = data.parsed?.info?.tokenAmount?.amount
+            if (typeof amount !== 'string') {
+              continue
+            }
+            const raw = BigInt(amount)
+            nbrTotalRaw += raw
+            if (entry.pubkey.equals(ata)) {
+              nbrRaw = raw
+            }
+          }
         } catch {
           nbrRaw = 0n
+          nbrTotalRaw = 0n
         }
+
+        const otherRaw = nbrTotalRaw > nbrRaw ? nbrTotalRaw - nbrRaw : 0n
 
         if (!cancelled) {
           setState({
@@ -71,12 +107,12 @@ export function useWalletBalances(): WalletBalances & { refresh: () => void } {
               minimumFractionDigits: 0,
               maximumFractionDigits: 6,
             }),
-            nbr: (Number(nbrRaw) / 10 ** 6).toLocaleString('en-US', {
-              minimumFractionDigits: 0,
-              maximumFractionDigits: 6,
-            }),
+            nbr: formatToken(nbrRaw),
+            nbrTotal: formatToken(nbrTotalRaw),
             solLamports,
             nbrRaw,
+            nbrTotalRaw,
+            otherRaw,
             error: null,
           })
         }
