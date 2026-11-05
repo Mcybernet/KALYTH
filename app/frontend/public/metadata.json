@@ -11,7 +11,6 @@
     { "trait_type": "Daily burn", "value": "800000" }
   ],
   "properties": {
-    "category": "fungible",
     "files": [
       {
         "uri": "https://mcybernet.github.io/KALYTH/brand/klyth-logo.png",
