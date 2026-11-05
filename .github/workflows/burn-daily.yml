@@ -1,0 +1,43 @@
+name: Daily KLYTH burn
+
+on:
+  schedule:
+    # Two attempts so scheduler delay cannot skip a day. The on-chain 23h50m
+    # window rejects the second run if the first one already burned.
+    - cron: '5 0 * * *'
+    - cron: '35 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-klyth-burn
+  cancel-in-progress: false
+
+jobs:
+  burn:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: scripts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: scripts/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Burn min(daily cap, reserve)
+        run: node burn-daily.mjs
+        env:
+          DEVNET_RPC_URL: ${{ secrets.DEVNET_RPC_URL }}
+          BURN_CRANK_KEYPAIR: ${{ secrets.BURN_CRANK_KEYPAIR }}

@@ -1,0 +1,40 @@
+{
+  "network": "devnet",
+  "programId": "CzAyXzhjECqNBPYMiU7eCVGYZVcc5DQKHXXxV4xGxBSw",
+  "authority": "2sM66rkL4FziKY9koz9wAHbtbUeLYwyTU5KCJEbRXuRN",
+  "mint": "GuaBwGkmwKJqU5AkxCoFQdGqY1UsDGtswJ9KGphvhkeK",
+  "decimals": 6,
+  "curveState": "DGEu6BDgzQrb2h1rLNiPaAS4wZRxnwg7DVn9Yg2K3QPv",
+  "curveVault": "86ay5krMiVDKc1HQfpCJ65hwcJKkZLZzHaXuRTmApRBo",
+  "solReserve": "83r1wg2j89ME5mjFJYrXQg9DiVHh3K6GPjD2CG6tWp3J",
+  "burnState": "Erm5f4LCVMmejQrAUVfhTfHKzzs6Au66qtdRoTbd5hQ6",
+  "burnAuthority": "FuRgsStULTV2enAXEkAv9NYypxbv6Vcp6vXo2nWh7rN9",
+  "burnReserve": "V6yBiGHso17rfhD8qVCiJqHdSVAfPL5QWfp3EKevJzG",
+  "treasuryAta": "5TXgUjRmKyDV7kFK4Uni3uieLyMGQG3xd5riNmBZAuMW",
+  "communityAccount": "AhMsWehAnHQKNGYmdHXDEbuPfoMqoLC81X3VfZbzpJCg",
+  "allocation": {
+    "curve": "50000000000000",
+    "burn": "40000000000000",
+    "treasury": "5000000000000",
+    "community": "5000000000000",
+    "total": "100000000000000"
+  },
+  "dailyCapRaw": "800000000000",
+  "curveParams": {
+    "initialPriceScaled": "1000000000000000",
+    "slopeScaled": "80",
+    "maxSoldSupplyRaw": "50000000000000"
+  },
+  "solReserveSeedLamports": 2000000000,
+  "dryRun": false,
+  "signatures": {
+    "createMint": "2eKaTkm5wSdHnyLhYHMhVkSzuahsYQd461jhDsgQct15CKhkZPhjv8J2QVjQRrV8E6TxN8tYL3JPkn2ufdxxYMc",
+    "createTokenAccounts": "TSn54VKKvRNjxzv5PBWHcHMEo8ZEgmoGTjvUPKCMgXXwyrysCQJ84UXCR1dwHm9xa1zwmtUDJLtwE65KTSgM5yV",
+    "initializeCurve": "2Yu3YVN9tUW8Mn2KVcXKNMieugSrmXs9tH1yWXWzdkb7QW2hFiHvLnKN2Z1RomT5hpuvyY9ataSJ7GV6UxF92GnF",
+    "mintAllocations": "2XHSKK8wyu62nZ37xWz5S3MT8Q1cxFrhVmE1FtH8K2v4mY59fWgQoUseVEezRrRipEJASGrtU4woha6M19qvaLgG",
+    "initializeBurn": "5MvmG7rpn1jTSvfUqf2FFqqa94uLj8Qvb5RzASpvQNgQtJ4y3Vmg8hJAhymTVBVMkTgkR3zB5tj2BBoLp8YFfgAD",
+    "revokeMintAuthority": "3zRkFbVkTNorSXn1VeyLPgahjJWXvcBTJqCr8mXXNsa6on7k96fboHTx31HBZdjjg145RRdU6ffGmKpNQnKth7pV",
+    "fundSolReserve": "mrwuqbyHD442GYp8k3MtEmDZe2CHb4uv4pD8BZCdXP7XxZmZXcvF3PEfcG6M1D3RTRGnmoKtJzhtRbRcmzMXhV6"
+  },
+  "updatedAt": "2026-11-05T07:01:22.829Z"
+}

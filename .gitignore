@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+dist/
+dist-ssr/
+build/
+target/
+.anchor/
+
+# Local env and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id.json
+keypair*.json
+*-keypair.json
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# Test and tooling caches
+coverage/
+.nyc_output/
+.vite/
+.cache/
+test-ledger/
+.lighthouse/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Rust
+**/*.rs.bk
+
+# Misc
+*.local
+*.tsbuildinfo

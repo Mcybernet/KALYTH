@@ -1,0 +1,20 @@
+{
+  "name": "nebula-burn-ops",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Devnet rebuild, migration, and daily burn crank for KALYTH",
+  "scripts": {
+    "verify": "node verify-burn-setup.mjs",
+    "migrate": "node migrate-burn.mjs",
+    "burn:daily": "node burn-daily.mjs"
+  },
+  "dependencies": {
+    "@solana/spl-token": "^0.4.15",
+    "@solana/web3.js": "^1.99.0",
+    "bs58": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

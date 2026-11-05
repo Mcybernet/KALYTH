@@ -1,0 +1,45 @@
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: var(--space-2);
+  z-index: var(--z-modal);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: #ffffff;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  text-decoration: none;
+}
+
+.skip-link:focus {
+  left: var(--space-4);
+}
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.app-content {
+  flex: 1;
+  width: 100%;
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: clamp(20px, 3vw, 36px) clamp(16px, 3vw, 32px) clamp(44px, 6vw, 72px);
+}
+
+.app-content:focus {
+  outline: none;
+}
+
+.app-page h2 {
+  margin-bottom: var(--space-2);
+  font-size: var(--text-xl);
+}
+
+.app-page p {
+  max-width: 62ch;
+  color: var(--color-text-secondary);
+}
