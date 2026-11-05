@@ -9,6 +9,7 @@ import {
   MINT_ADDRESS,
   PROGRAM_ADDRESS,
   SOL_RESERVE_ADDRESS,
+  STATE_ADDRESS,
 } from './addresses'
 import { rpcRequest } from './rpc'
 
@@ -215,6 +216,14 @@ function parseProgramRecord(
     return null
   }
 
+  // The program is mint-agnostic, so it also contains trades for older mints.
+  // Only keep transactions that reference the current KLYTH mint.
+  const touchedAccounts =
+    instruction.accounts ?? message.accountKeys.map((key) => key.pubkey)
+  if (!touchedAccounts.includes(MINT_ADDRESS)) {
+    return null
+  }
+
   const data = decodeBase58(instruction.data)
   if (data.length < 24) {
     return null
@@ -319,8 +328,8 @@ export async function fetchActivity(
   const programLimit = Math.min(limit * 3 + 5, 150)
   const burnLimit = Math.min(limit * 2 + 5, 80)
 
-  const [programSignatures, burnSignatures] = await Promise.all([
-    getSignatures(PROGRAM_ADDRESS, programLimit, signal),
+  const [curveSignatures, burnSignatures] = await Promise.all([
+    getSignatures(STATE_ADDRESS, programLimit, signal),
     getSignatures(BURN_RESERVE_TOKEN_ACCOUNT, burnLimit, signal),
   ])
 
@@ -328,7 +337,7 @@ export async function fetchActivity(
   const candidates: Array<{ entry: SignatureEntry; source: 'program' | 'burn' }> = []
 
   for (const [source, entries] of [
-    ['program', programSignatures],
+    ['program', curveSignatures],
     ['burn', burnSignatures],
   ] as const) {
     for (const entry of entries) {
@@ -368,7 +377,7 @@ export async function fetchActivity(
   const value: ActivityPage = {
     records: records.slice(0, limit),
     hasMore:
-      programSignatures.length === programLimit ||
+      curveSignatures.length === programLimit ||
       burnSignatures.length === burnLimit,
   }
 
