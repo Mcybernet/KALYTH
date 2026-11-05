@@ -168,9 +168,9 @@ export default function ChainField() {
     glowCanvas.height = 128
     const glowCtx = glowCanvas.getContext('2d')
     if (glowCtx) {
-      // Elliptical field: smooth falloff well within texture bounds so the
-      // sprite never gets clipped by the canvas edge.
-      const gradient = glowCtx.createRadialGradient(128, 64, 2, 128, 64, 95)
+      // Elliptical field: falloff must reach zero before the top/bottom edge,
+      // so vertical radius is capped at 64 (half canvas height).
+      const gradient = glowCtx.createRadialGradient(128, 64, 2, 128, 64, 64)
       gradient.addColorStop(0, 'rgba(224, 166, 75, 0.22)')
       gradient.addColorStop(0.35, 'rgba(212, 130, 62, 0.12)')
       gradient.addColorStop(0.65, 'rgba(201, 106, 58, 0.05)')
@@ -188,7 +188,7 @@ export default function ChainField() {
       blending: THREE.AdditiveBlending,
     })
     const glow = new THREE.Sprite(glowMaterial)
-    glow.scale.set(6.2, 2.8, 1)
+    glow.scale.set(6.2, 1.8, 1)
     glow.position.set(0, 0, -1.4)
     scene.add(glow)
 
