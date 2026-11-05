@@ -142,7 +142,8 @@ export default function KlythCoin() {
       }
     }
 
-    // Back face: animated vintage analog clock (Big Ben style), redrawn every frame.
+    // Back face: Big Ben style — matte black dial, gilt Roman numerals,
+    // pointed gilt hands, redrawn every frame with real time.
     const backCanvas = document.createElement('canvas')
     backCanvas.width = FACE_SIZE
     backCanvas.height = FACE_SIZE
@@ -153,88 +154,169 @@ export default function KlythCoin() {
     backTexture.anisotropy = renderer.capabilities.getMaxAnisotropy()
 
     const ROMAN_NUMERALS = ['XII', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI']
+    const GILT = '#caa64b'
+    const GILT_HI = '#ecd28a'
+    const GILT_LO = '#6b5320'
 
     const drawBackFace = () => {
       if (!backCtx) {
         return
       }
       const c = FACE_SIZE / 2
+      const TAU = Math.PI * 2
 
-      // Trails: fade previous frame into the background.
-      backCtx.globalCompositeOperation = 'source-over'
-      backCtx.fillStyle = 'rgba(6, 6, 9, 0.22)'
-      backCtx.fillRect(0, 0, FACE_SIZE, FACE_SIZE)
+      backCtx.clearRect(0, 0, FACE_SIZE, FACE_SIZE)
 
-      // Clock face: dark rim + ivory dial (Big Ben style).
-      const face = backCtx.createRadialGradient(c, c, c * 0.05, c, c, c * 0.98)
-      face.addColorStop(0, '#3a2f24')
-      face.addColorStop(0.75, '#17100a')
-      face.addColorStop(1, '#0b0705')
-      backCtx.fillStyle = face
+      // Outer rim: near-black with a faint warm bevel.
+      const rim = backCtx.createRadialGradient(c, c, c * 0.78, c, c, c)
+      rim.addColorStop(0, '#0d0c0a')
+      rim.addColorStop(0.82, '#141109')
+      rim.addColorStop(0.92, '#241d12')
+      rim.addColorStop(0.97, '#0a0908')
+      rim.addColorStop(1, '#050505')
+      backCtx.fillStyle = rim
       backCtx.beginPath()
-      backCtx.arc(c, c, c, 0, Math.PI * 2)
+      backCtx.arc(c, c, c, 0, TAU)
       backCtx.fill()
 
-      backCtx.fillStyle = '#efe6d0'
+      // Dial: deep black, barely lifted at centre.
+      const dial = backCtx.createRadialGradient(c, c * 0.92, c * 0.05, c, c, c * 0.86)
+      dial.addColorStop(0, '#1b1a17')
+      dial.addColorStop(0.55, '#100f0d')
+      dial.addColorStop(1, '#050505')
+      backCtx.fillStyle = dial
       backCtx.beginPath()
-      backCtx.arc(c, c, c * 0.82, 0, Math.PI * 2)
+      backCtx.arc(c, c, c * 0.86, 0, TAU)
       backCtx.fill()
 
-      // Minute ticks.
+      // Chapter rings: thin gilt lines bounding the dial.
+      const ring = (radius: number, width: number, style: string) => {
+        backCtx.strokeStyle = style
+        backCtx.lineWidth = width
+        backCtx.beginPath()
+        backCtx.arc(c, c, radius, 0, TAU)
+        backCtx.stroke()
+      }
+      ring(c * 0.845, 2, 'rgba(236, 210, 138, 0.55)')
+      ring(c * 0.82, 1, 'rgba(202, 166, 75, 0.28)')
+      ring(c * 0.62, 1, 'rgba(202, 166, 75, 0.16)')
+
+      // Minute track: 60 gilt ticks, longer + heavier on the hour.
       for (let i = 0; i < 60; i += 1) {
-        const ang = (i / 60) * Math.PI * 2 - Math.PI / 2
+        const ang = (i / 60) * TAU - Math.PI / 2
         const major = i % 5 === 0
-        const r1 = c * (major ? 0.64 : 0.69)
-        const r2 = c * (major ? 0.78 : 0.74)
-        backCtx.strokeStyle = major ? 'rgba(20, 16, 12, 0.9)' : 'rgba(20, 16, 12, 0.5)'
-        backCtx.lineWidth = major ? 2.5 : 1
+        const r1 = c * (major ? 0.665 : 0.71)
+        const r2 = c * 0.775
+        backCtx.strokeStyle = major ? GILT : 'rgba(202, 166, 75, 0.42)'
+        backCtx.lineWidth = major ? 3 : 1.2
+        backCtx.lineCap = 'butt'
         backCtx.beginPath()
         backCtx.moveTo(c + Math.cos(ang) * r1, c + Math.sin(ang) * r1)
         backCtx.lineTo(c + Math.cos(ang) * r2, c + Math.sin(ang) * r2)
         backCtx.stroke()
       }
 
-      // Roman numerals.
-      backCtx.fillStyle = 'rgba(20, 16, 12, 0.92)'
-      backCtx.font = '600 44px Georgia, "Times New Roman", serif'
+      // Gilt Roman numerals, embossed with a dark drop.
+      backCtx.font = `600 ${Math.round(c * 0.135)}px Georgia, "Times New Roman", serif`
       backCtx.textAlign = 'center'
       backCtx.textBaseline = 'middle'
-      const numR = c * 0.52
+      const numR = c * 0.505
       for (let h = 0; h < 12; h += 1) {
-        const ang = (h / 12) * Math.PI * 2 - Math.PI / 2
+        const ang = (h / 12) * TAU - Math.PI / 2
         const x = c + Math.cos(ang) * numR
         const y = c + Math.sin(ang) * numR
+        backCtx.fillStyle = 'rgba(0, 0, 0, 0.85)'
+        backCtx.fillText(ROMAN_NUMERALS[h], x + 1.5, y + 2)
+        backCtx.fillStyle = GILT
         backCtx.fillText(ROMAN_NUMERALS[h], x, y)
       }
 
-      // Hands, sweeping with real time.
+      // Hands: real time, tapered gilt silhouettes with sharp points.
       const secondsTotal = Date.now() / 1000
       const sec = secondsTotal % 60
       const min = Math.floor(secondsTotal / 60) % 60
       const hr = Math.floor(secondsTotal / 3600) % 12
-      const secAngle = (sec / 60) * Math.PI * 2 - Math.PI / 2
-      const minAngle = ((min + sec / 60) / 60) * Math.PI * 2 - Math.PI / 2
-      const hrAngle = ((hr + min / 60) / 12) * Math.PI * 2 - Math.PI / 2
+      const secAngle = (sec / 60) * TAU - Math.PI / 2
+      const minAngle = ((min + sec / 60) / 60) * TAU - Math.PI / 2
+      const hrAngle = ((hr + min / 60) / 12) * TAU - Math.PI / 2
 
-      const drawHand = (angle: number, length: number, width: number) => {
-        backCtx.strokeStyle = 'rgba(12, 10, 8, 0.95)'
-        backCtx.lineWidth = width
-        backCtx.lineCap = 'round'
+      // Tapered spade hand drawn in local space along +x, then rotated.
+      const drawHand = (
+        angle: number,
+        length: number,
+        width: number,
+        tail: number,
+        fill: string,
+        flare: boolean,
+      ) => {
+        backCtx.save()
+        backCtx.translate(c, c)
+        backCtx.rotate(angle)
+        const w = width / 2
+        const f = flare ? width * 1.05 : width * 0.62
         backCtx.beginPath()
-        const tail = length * 0.35
-        backCtx.moveTo(c - Math.cos(angle) * tail, c - Math.sin(angle) * tail)
-        backCtx.lineTo(c + Math.cos(angle) * length, c + Math.sin(angle) * length)
+        backCtx.moveTo(-tail, 0)
+        backCtx.lineTo(-tail * 0.55, w * 0.55)
+        backCtx.lineTo(length * 0.52, w * 0.42)
+        backCtx.lineTo(length * 0.8, f)
+        backCtx.lineTo(length, 0)
+        backCtx.lineTo(length * 0.8, -f)
+        backCtx.lineTo(length * 0.52, -w * 0.42)
+        backCtx.lineTo(-tail * 0.55, -w * 0.55)
+        backCtx.closePath()
+        backCtx.fillStyle = fill
+        backCtx.fill()
+        backCtx.strokeStyle = 'rgba(0, 0, 0, 0.55)'
+        backCtx.lineWidth = 1
         backCtx.stroke()
+        backCtx.restore()
       }
 
-      drawHand(hrAngle, c * 0.3, c * 0.05)
-      drawHand(minAngle, c * 0.5, c * 0.07)
-      drawHand(secAngle, c * 0.66, c * 0.025)
+      drawHand(hrAngle, c * 0.32, c * 0.075, c * 0.1, GILT, true)
+      drawHand(minAngle, c * 0.52, c * 0.06, c * 0.12, GILT_HI, true)
 
-      // Center pin.
-      backCtx.fillStyle = 'rgba(12, 10, 8, 0.95)'
+      // Second hand: needle with counterweight ring.
+      backCtx.save()
+      backCtx.translate(c, c)
+      backCtx.rotate(secAngle)
+      backCtx.strokeStyle = '#d8b46a'
+      backCtx.lineWidth = Math.max(1.5, c * 0.008)
+      backCtx.lineCap = 'round'
       backCtx.beginPath()
-      backCtx.arc(c, c, c * 0.03, 0, Math.PI * 2)
+      backCtx.moveTo(-c * 0.18, 0)
+      backCtx.lineTo(c * 0.66, 0)
+      backCtx.stroke()
+      backCtx.fillStyle = '#d8b46a'
+      backCtx.beginPath()
+      backCtx.arc(-c * 0.13, 0, c * 0.028, 0, TAU)
+      backCtx.fill()
+      backCtx.fillStyle = '#050505'
+      backCtx.beginPath()
+      backCtx.arc(-c * 0.13, 0, c * 0.014, 0, TAU)
+      backCtx.fill()
+      backCtx.restore()
+
+      // Centre boss: layered gilt cap with dark pin.
+      const boss = backCtx.createRadialGradient(c - c * 0.01, c - c * 0.01, c * 0.005, c, c, c * 0.045)
+      boss.addColorStop(0, GILT_HI)
+      boss.addColorStop(0.6, GILT)
+      boss.addColorStop(1, GILT_LO)
+      backCtx.fillStyle = boss
+      backCtx.beginPath()
+      backCtx.arc(c, c, c * 0.042, 0, TAU)
+      backCtx.fill()
+      backCtx.fillStyle = '#0a0a0a'
+      backCtx.beginPath()
+      backCtx.arc(c, c, c * 0.016, 0, TAU)
+      backCtx.fill()
+
+      // Vignette: pull the dial edges down into shadow.
+      const vignette = backCtx.createRadialGradient(c, c, c * 0.55, c, c, c * 0.86)
+      vignette.addColorStop(0, 'rgba(0, 0, 0, 0)')
+      vignette.addColorStop(1, 'rgba(0, 0, 0, 0.5)')
+      backCtx.fillStyle = vignette
+      backCtx.beginPath()
+      backCtx.arc(c, c, c * 0.86, 0, TAU)
       backCtx.fill()
 
       backTexture.needsUpdate = true
