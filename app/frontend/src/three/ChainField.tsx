@@ -188,7 +188,6 @@ export default function ChainField() {
     glow.position.set(0, 0, -1.4)
     scene.add(glow)
 
-    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     let inView = true
     let pageVisible = !document.hidden
 
@@ -231,31 +230,27 @@ export default function ChainField() {
       const delta = Math.min(clock.getDelta(), 0.05)
       elapsed += delta
 
-      if (!reduceMotion) {
-        const intro = Math.min(1, (performance.now() - introStart) / 900)
-        blocks.forEach((block, index) => {
-          const local = Math.max(0, Math.min(1, (intro - index * 0.12) / 0.4))
-          const eased = 1 - Math.pow(1 - local, 3)
-          block.scale.setScalar(eased)
-        })
+      const intro = Math.min(1, (performance.now() - introStart) / 900)
+      blocks.forEach((block, index) => {
+        const local = Math.max(0, Math.min(1, (intro - index * 0.12) / 0.4))
+        const eased = 1 - Math.pow(1 - local, 3)
+        block.scale.setScalar(eased)
+      })
 
-        chain.rotation.y = Math.sin(elapsed * 0.24) * 0.34
-        chain.rotation.x = Math.sin(elapsed * 0.17) * 0.07
-        chain.position.y = Math.sin(elapsed * 0.6) * 0.04
+      chain.rotation.y = Math.sin(elapsed * 0.24) * 0.34
+      chain.rotation.x = Math.sin(elapsed * 0.17) * 0.07
+      chain.position.y = Math.sin(elapsed * 0.6) * 0.04
 
-        packets.forEach((packet) => {
-          const progress = (elapsed * 0.16 + packet.userData.offset) % 1
-          const scaled = progress * (blockCount - 1)
-          const index = Math.min(blockCount - 2, Math.floor(scaled))
-          const local = scaled - index
-          packet.position.lerpVectors(centers[index], centers[index + 1], local)
-          packet.position.z += 0.05
-        })
+      packets.forEach((packet) => {
+        const progress = (elapsed * 0.16 + packet.userData.offset) % 1
+        const scaled = progress * (blockCount - 1)
+        const index = Math.min(blockCount - 2, Math.floor(scaled))
+        const local = scaled - index
+        packet.position.lerpVectors(centers[index], centers[index + 1], local)
+        packet.position.z += 0.05
+      })
 
-        particles.rotation.y = elapsed * 0.012
-      } else {
-        blocks.forEach((block) => block.scale.setScalar(1))
-      }
+      particles.rotation.y = elapsed * 0.012
 
       renderer.render(scene, camera)
     }

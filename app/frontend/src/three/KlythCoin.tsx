@@ -296,8 +296,6 @@ export default function KlythCoin() {
     mount.addEventListener('pointerenter', onPointerEnter)
     mount.addEventListener('pointerleave', onPointerLeave)
 
-    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-
     // ---------------------------------------------------------------- resize --
     const resize = () => {
       const width = mount.clientWidth || 360
@@ -329,7 +327,7 @@ export default function KlythCoin() {
     let spin = 0.4
     let tiltX = 0
     let tiltZ = 0
-    let scale = reduceMotion ? 1 : 0.78
+    let scale = 0.78
     const introStart = performance.now()
     let frameId = 0
 
@@ -343,9 +341,7 @@ export default function KlythCoin() {
       const delta = Math.min(clock.getDelta(), 0.05)
       elapsed += delta
 
-      const introProgress = reduceMotion
-        ? 1
-        : Math.min(1, (performance.now() - introStart) / 1400)
+      const introProgress = Math.min(1, (performance.now() - introStart) / 1400)
       const eased = 1 - Math.pow(1 - introProgress, 3)
 
       const baseTiltX = THREE.MathUtils.lerp(-1.15, -0.08, eased)
@@ -360,14 +356,12 @@ export default function KlythCoin() {
       tiltZ += (targetTiltZ - tiltZ) * damping
       scale += (targetScale - scale) * damping
 
-      if (!reduceMotion) {
-        spin += delta * (hovered ? 0.1 : 0.19)
-      }
+      spin += delta * (hovered ? 0.1 : 0.19)
 
       coin.rotation.x = baseTiltX + tiltX
       coin.rotation.y = spin
       coin.rotation.z = tiltZ
-      coin.position.y = reduceMotion ? 0 : Math.sin(elapsed * 0.85) * 0.035
+      coin.position.y = Math.sin(elapsed * 0.85) * 0.035
       coin.scale.setScalar(scale)
 
       stars.rotation.y = elapsed * 0.02
