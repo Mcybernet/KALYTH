@@ -37,9 +37,6 @@ jobs:
       - name: Configure Pages
         id: pages
         uses: actions/configure-pages@v5
-        with:
-          # Creates the Pages site on first run if it is not enabled yet.
-          enablement: true
 
       - name: Install dependencies
         run: npm ci
