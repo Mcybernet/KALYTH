@@ -142,8 +142,8 @@ export default function KlythCoin() {
       }
     }
 
-    // Back face: an eclipse emblem with a wordmark, so the reverse still reads
-    // as a struck coin rather than a blank disc.
+    // Back face: an eclipse emblem with a curved wordmark, so the reverse still
+    // reads as a struck coin rather than a blank disc.
     const backCanvas = document.createElement('canvas')
     backCanvas.width = FACE_SIZE
     backCanvas.height = FACE_SIZE
@@ -191,16 +191,36 @@ export default function KlythCoin() {
       backCtx.arc(c, c, c * 0.24, 0, Math.PI * 2)
       backCtx.stroke()
 
+      // Curved "KALYTH" wordmark along the top arc with emboss effect.
+      const textRadius = c * 0.68
+      const text = 'KALYTH'
+      const charCount = text.length
+      const totalArcAngle = Math.PI * 0.4
+      const startAngle = -Math.PI / 2 - totalArcAngle / 2
+
       backCtx.textAlign = 'center'
       backCtx.textBaseline = 'middle'
+      backCtx.font = '600 48px "Space Grotesk", Inter, system-ui, sans-serif'
 
-      backCtx.fillStyle = 'rgba(244, 215, 154, 0.92)'
-      backCtx.font = '600 40px "Space Grotesk", Inter, system-ui, sans-serif'
-      backCtx.fillText('K A L Y T H', c, c + c * 0.54)
+      for (let i = 0; i < charCount; i += 1) {
+        const angle = startAngle + (i / (charCount - 1)) * totalArcAngle
+        const x = c + Math.cos(angle) * textRadius
+        const y = c + Math.sin(angle) * textRadius
 
-      backCtx.fillStyle = 'rgba(224, 166, 75, 0.5)'
-      backCtx.font = '500 19px "IBM Plex Mono", ui-monospace, monospace'
-      backCtx.fillText('S O L A N A   D E V N E T', c, c + c * 0.68)
+        backCtx.save()
+        backCtx.translate(x, y)
+        backCtx.rotate(angle + Math.PI / 2)
+
+        // Shadow layer for depth.
+        backCtx.fillStyle = 'rgba(0, 0, 0, 0.6)'
+        backCtx.fillText(text[i], 2, 2)
+
+        // Main text layer.
+        backCtx.fillStyle = 'rgba(244, 215, 154, 0.95)'
+        backCtx.fillText(text[i], 0, 0)
+
+        backCtx.restore()
+      }
     }
 
     const backTexture = new THREE.CanvasTexture(backCanvas)
@@ -258,14 +278,13 @@ export default function KlythCoin() {
     glowCanvas.height = 256
     const glowCtx = glowCanvas.getContext('2d')
     if (glowCtx) {
-      // Smooth full-field falloff: the sprite is scaled to exactly fill the
-      // canvas, so the gradient must reach zero before it touches any edge.
-      const gradient = glowCtx.createRadialGradient(128, 128, 6, 128, 128, 181)
-      gradient.addColorStop(0, 'rgba(224, 166, 75, 0.34)')
-      gradient.addColorStop(0.28, 'rgba(212, 130, 62, 0.2)')
-      gradient.addColorStop(0.5, 'rgba(201, 106, 58, 0.1)')
-      gradient.addColorStop(0.72, 'rgba(201, 106, 58, 0.035)')
-      gradient.addColorStop(0.88, 'rgba(201, 106, 58, 0.008)')
+      // Smooth radial falloff well inside the texture bounds so the sprite never
+      // gets clipped by the canvas edge, even when scaled large.
+      const gradient = glowCtx.createRadialGradient(128, 128, 4, 128, 128, 110)
+      gradient.addColorStop(0, 'rgba(224, 166, 75, 0.28)')
+      gradient.addColorStop(0.35, 'rgba(212, 130, 62, 0.16)')
+      gradient.addColorStop(0.65, 'rgba(201, 106, 58, 0.07)')
+      gradient.addColorStop(0.85, 'rgba(201, 106, 58, 0.02)')
       gradient.addColorStop(1, 'rgba(0, 0, 0, 0)')
       glowCtx.fillStyle = gradient
       glowCtx.fillRect(0, 0, 256, 256)
@@ -279,7 +298,7 @@ export default function KlythCoin() {
       blending: THREE.AdditiveBlending,
     })
     const glow = new THREE.Sprite(glowMaterial)
-    glow.scale.set(5.2, 5.2, 1)
+    glow.scale.set(4.8, 4.8, 1)
     glow.position.z = -1.4
     scene.add(glow)
 
@@ -312,6 +331,11 @@ export default function KlythCoin() {
     let inView = true
     let pageVisible = !document.hidden
 
+    let isDragging = false
+    let previousMouse = { x: 0, y: 0 }
+    let manualRotationX = 0
+    let manualRotationY = 0
+
     const onPointerMove = (event: PointerEvent) => {
       const rect = mount.getBoundingClientRect()
       if (rect.width === 0 || rect.height === 0) {
@@ -319,19 +343,39 @@ export default function KlythCoin() {
       }
       pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
       pointer.y = ((event.clientY - rect.top) / rect.height) * 2 - 1
+
+      if (isDragging && hovered) {
+        const deltaX = event.clientX - previousMouse.x
+        const deltaY = event.clientY - previousMouse.y
+        manualRotationY += deltaX * 0.008
+        manualRotationX += deltaY * 0.008
+        previousMouse = { x: event.clientX, y: event.clientY }
+      }
     }
     const onPointerEnter = () => {
       hovered = true
     }
     const onPointerLeave = () => {
       hovered = false
+      isDragging = false
       pointer.x = 0
       pointer.y = 0
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      if (hovered) {
+        isDragging = true
+        previousMouse = { x: event.clientX, y: event.clientY }
+      }
+    }
+    const onPointerUp = () => {
+      isDragging = false
     }
 
     mount.addEventListener('pointermove', onPointerMove)
     mount.addEventListener('pointerenter', onPointerEnter)
     mount.addEventListener('pointerleave', onPointerLeave)
+    mount.addEventListener('pointerdown', onPointerDown)
+    mount.addEventListener('pointerup', onPointerUp)
 
     // ---------------------------------------------------------------- resize --
     const resize = () => {
@@ -340,15 +384,6 @@ export default function KlythCoin() {
       renderer.setSize(width, height, false)
       camera.aspect = width / height
       camera.updateProjectionMatrix()
-
-      // Fit the halo inside the frustum instead of letting the sprite run past
-      // the canvas edge, which produced a hard orange cut at the border.
-      const glowDistance = camera.position.z - glow.position.z
-      const viewHeight =
-        2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * glowDistance
-      const viewWidth = viewHeight * camera.aspect
-      const fit = Math.min(viewWidth, viewHeight)
-      glow.scale.set(fit, fit, 1)
     }
     const resizeObserver = new ResizeObserver(resize)
     resizeObserver.observe(mount)
@@ -394,18 +429,20 @@ export default function KlythCoin() {
       const baseScale = THREE.MathUtils.lerp(0.78, 1, eased)
       const targetScale = baseScale
 
-      const targetTiltX = hovered ? -pointer.y * 0.32 : 0
-      const targetTiltZ = hovered ? pointer.x * 0.16 : 0
+      const targetTiltX = hovered && !isDragging ? -pointer.y * 0.32 : 0
+      const targetTiltZ = hovered && !isDragging ? pointer.x * 0.16 : 0
       const damping = Math.min(1, delta * 6)
 
       tiltX += (targetTiltX - tiltX) * damping
       tiltZ += (targetTiltZ - tiltZ) * damping
       scale += (targetScale - scale) * damping
 
-      spin += delta * (hovered ? 0.1 : 0.19)
+      if (!hovered) {
+        spin += delta * 0.19
+      }
 
-      coin.rotation.x = baseTiltX + tiltX
-      coin.rotation.y = spin
+      coin.rotation.x = baseTiltX + tiltX + manualRotationX
+      coin.rotation.y = spin + manualRotationY
       coin.rotation.z = tiltZ
       coin.position.y = Math.sin(elapsed * 0.85) * 0.035
       coin.scale.setScalar(scale)

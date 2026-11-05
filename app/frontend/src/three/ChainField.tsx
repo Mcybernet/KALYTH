@@ -168,14 +168,13 @@ export default function ChainField() {
     glowCanvas.height = 128
     const glowCtx = glowCanvas.getContext('2d')
     if (glowCtx) {
-      // Elliptical field: the sprite is scaled to exactly fill the stage, so
-      // the gradient reaches zero at the border instead of being clipped.
-      const gradient = glowCtx.createRadialGradient(128, 64, 3, 128, 64, 128)
-      gradient.addColorStop(0, 'rgba(224, 166, 75, 0.26)')
-      gradient.addColorStop(0.3, 'rgba(212, 130, 62, 0.15)')
-      gradient.addColorStop(0.55, 'rgba(201, 106, 58, 0.07)')
-      gradient.addColorStop(0.78, 'rgba(201, 106, 58, 0.022)')
-      gradient.addColorStop(0.92, 'rgba(201, 106, 58, 0.005)')
+      // Elliptical field: smooth falloff well within texture bounds so the
+      // sprite never gets clipped by the canvas edge.
+      const gradient = glowCtx.createRadialGradient(128, 64, 2, 128, 64, 95)
+      gradient.addColorStop(0, 'rgba(224, 166, 75, 0.22)')
+      gradient.addColorStop(0.35, 'rgba(212, 130, 62, 0.12)')
+      gradient.addColorStop(0.65, 'rgba(201, 106, 58, 0.05)')
+      gradient.addColorStop(0.85, 'rgba(201, 106, 58, 0.015)')
       gradient.addColorStop(1, 'rgba(0, 0, 0, 0)')
       glowCtx.fillStyle = gradient
       glowCtx.fillRect(0, 0, 256, 128)
@@ -189,7 +188,7 @@ export default function ChainField() {
       blending: THREE.AdditiveBlending,
     })
     const glow = new THREE.Sprite(glowMaterial)
-    glow.scale.set(7.4, 3.2, 1)
+    glow.scale.set(6.2, 2.8, 1)
     glow.position.set(0, 0, -1.4)
     scene.add(glow)
 
@@ -202,15 +201,6 @@ export default function ChainField() {
       renderer.setSize(width, height, false)
       camera.aspect = width / height
       camera.updateProjectionMatrix()
-
-      // Keep the warm backdrop inside the canvas. At the default scale the
-      // sprite overflowed on wide stages and was clipped into a hard orange
-      // band along the edges.
-      const glowDistance = camera.position.z - glow.position.z
-      const viewHeight =
-        2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * glowDistance
-      const viewWidth = viewHeight * camera.aspect
-      glow.scale.set(viewWidth, viewHeight, 1)
     }
     const resizeObserver = new ResizeObserver(resize)
     resizeObserver.observe(mount)
