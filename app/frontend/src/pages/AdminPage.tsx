@@ -12,9 +12,10 @@ import {
   TOKEN_PROGRAM_ID,
 } from '@solana/spl-token'
 import { PageHeader } from '../components/PageHeader'
+import { KLYTH_MINT } from '../lib/curve'
 
 const PROGRAM_ID = new PublicKey('CzAyXzhjECqNBPYMiU7eCVGYZVcc5DQKHXXxV4xGxBSw')
-const MINT = new PublicKey('GuaBwGkmwKJqU5AkxCoFQdGqY1UsDGtswJ9KGphvhkeK')
+const MINT = KLYTH_MINT
 const TOKEN_DECIMALS = 6
 
 const DEPOSIT_TOKENS_DISCRIMINATOR = Buffer.from([176, 83, 229, 18, 191, 143, 176, 150])

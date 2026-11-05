@@ -3,6 +3,7 @@ import { ConfirmationModal } from '../components/ConfirmationModal'
 import { TransactionStatus } from '../components/TransactionStatus'
 import { ArrowUpRight, Check, Copy, Orbit, TriangleAlert } from 'lucide-react'
 import { KLYTH_LOGO_URL } from '../lib/assets'
+import { MINT_ADDRESS } from '../lib/addresses'
 
 const colorTokens = [
   { name: 'Background', value: '#050506', varName: '--color-bg' },
@@ -125,7 +126,7 @@ function DesignSystemPage() {
   const [tradeMode, setTradeMode] = useState<'buy' | 'sell'>('buy')
   const [demoStatus, setDemoStatus] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
-  const mintAddress = 'GuaBwGkmwKJqU5AkxCoFQdGqY1UsDGtswJ9KGphvhkeK'
+  const mintAddress = MINT_ADDRESS
   const shortMint = `${mintAddress.slice(0, 8)}…${mintAddress.slice(-6)}`
 
   return (

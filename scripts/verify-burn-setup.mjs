@@ -37,6 +37,23 @@ const UPGRADE_AUTHORITY = new PublicKey(
 const BPF_LOADER_UPGRADEABLE = new PublicKey(
   'BPFLoaderUpgradeab1e11111111111111111111111',
 )
+const METADATA_PROGRAM_ID = new PublicKey(
+  'metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s',
+)
+const METADATA_NAME = 'KALYTH'
+const METADATA_SYMBOL = 'KLYTH'
+const METADATA_URI = 'https://mcybernet.github.io/KALYTH/metadata.json'
+
+function getMetadataAddress() {
+  return PublicKey.findProgramAddressSync(
+    [
+      Buffer.from('metadata'),
+      METADATA_PROGRAM_ID.toBuffer(),
+      KLYTH_MINT.toBuffer(),
+    ],
+    METADATA_PROGRAM_ID,
+  )[0]
+}
 
 const checks = []
 
@@ -230,7 +247,54 @@ async function main() {
   check('KLYTH mint exists', Boolean(mintInfo))
   if (mintInfo) {
     const supply = mintInfo.data.readBigUInt64LE(36)
+    const mintAuthorityRevoked = mintInfo.data.readUInt32LE(0) === 0
     console.log(`       mint supply: ${formatNbr(supply)} KLYTH`)
+    check('mint authority is revoked', mintAuthorityRevoked)
+    check(
+      'supply is within the burn plan',
+      supply <= 100_000_000n * 1_000_000n && supply >= 60_000_000n * 1_000_000n,
+      formatNbr(supply),
+    )
+  }
+
+  const metadataInfo = await connection.getAccountInfo(
+    getMetadataAddress(),
+    'confirmed',
+  )
+  check(
+    'Metaplex metadata exists',
+    Boolean(metadataInfo),
+    getMetadataAddress().toBase58(),
+  )
+  if (metadataInfo) {
+    check(
+      'metadata owned by the Metaplex program',
+      metadataInfo.owner.equals(METADATA_PROGRAM_ID),
+      metadataInfo.owner.toBase58(),
+    )
+    check(
+      'metadata mint is KLYTH',
+      new PublicKey(metadataInfo.data.subarray(33, 65)).equals(KLYTH_MINT),
+    )
+
+    let offset = 65
+    const readMetadataString = () => {
+      const length = metadataInfo.data.readUInt32LE(offset)
+      offset += 4
+      const value = metadataInfo.data
+        .subarray(offset, offset + length)
+        .toString('utf8')
+        .replace(/\0+$/, '')
+      offset += length
+      return value
+    }
+    const name = readMetadataString()
+    const symbol = readMetadataString()
+    const uri = readMetadataString()
+
+    check('metadata name is KALYTH', name === METADATA_NAME, name)
+    check('metadata symbol is KLYTH', symbol === METADATA_SYMBOL, symbol)
+    check('metadata URI is published', uri === METADATA_URI, uri)
   }
 
   const burnStateInfo = await connection.getAccountInfo(

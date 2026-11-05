@@ -67,10 +67,11 @@ bonding curve bersifat mint-agnostic, jadi program ID tidak berubah.
 | Decimals | 6 |
 | Initial Supply | 100,000,000 KLYTH |
 | Final Supply (setelah 50 burn) | 60,000,000 KLYTH |
-| Mint Address | GuaBwGkmwKJqU5AkxCoFQdGqY1UsDGtswJ9KGphvhkeK |
+| Mint Address | 4MUt8MMxTDYvd35zTnysuJXt29xg5MH7Kb65sB73sN2W |
+| Metaplex Metadata | HFMgvqqxdzPXjR6xGN8jiJD14sXT28kYFFTTWgr5herR |
 | Main Wallet | 2sM66rkL4FziKY9koz9wAHbtbUeLYwyTU5KCJEbRXuRN |
-| Burn Authority (PDA) | FuRgsStULTV2enAXEkAv9NYypxbv6Vcp6vXo2nWh7rN9 |
-| Burn Reserve Token Account | V6yBiGHso17rfhD8qVCiJqHdSVAfPL5QWfp3EKevJzG |
+| Burn Authority (PDA) | 75qqs7K5JXpccypy37aj3uwoZFYWKZ7wMao6y4xw3ybC |
+| Burn Reserve Token Account | 6qV86Gd5SQ1YGn3TJCgXwZhmSz8m6PxDJSbL7at1Ra9v |
 
 Alokasi:
 

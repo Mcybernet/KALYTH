@@ -4,7 +4,7 @@ This document describes how KALYTH is put together: the on-chain bonding-curve p
 
 - **Network:** Solana Devnet only.
 - **Program ID:** `CzAyXzhjECqNBPYMiU7eCVGYZVcc5DQKHXXxV4xGxBSw`
-- **KLYTH mint:** `GuaBwGkmwKJqU5AkxCoFQdGqY1UsDGtswJ9KGphvhkeK`
+- **KLYTH mint:** `4MUt8MMxTDYvd35zTnysuJXt29xg5MH7Kb65sB73sN2W`
 - **Toolchain:** Anchor 0.30.1, Rust edition 2021, classic SPL Token program.
 
 For product intent, see [`../PRD.md`](../PRD.md). For trust boundaries and risks, see [`SECURITY.md`](SECURITY.md). For build/deploy steps, see [`DEPLOYMENT.md`](DEPLOYMENT.md).
@@ -76,12 +76,13 @@ Deployed addresses:
 
 | Account | Address |
 | --- | --- |
-| State | `DGEu6BDgzQrb2h1rLNiPaAS4wZRxnwg7DVn9Yg2K3QPv` |
-| Vault | `86ay5krMiVDKc1HQfpCJ65hwcJKkZLZzHaXuRTmApRBo` |
-| SOL reserve | `83r1wg2j89ME5mjFJYrXQg9DiVHh3K6GPjD2CG6tWp3J` |
-| Burn state | `Erm5f4LCVMmejQrAUVfhTfHKzzs6Au66qtdRoTbd5hQ6` |
-| Burn authority | `FuRgsStULTV2enAXEkAv9NYypxbv6Vcp6vXo2nWh7rN9` |
-| Burn reserve | `V6yBiGHso17rfhD8qVCiJqHdSVAfPL5QWfp3EKevJzG` |
+| State | `98NZ4NrFdsk6uT6zbHuDBSf7YC6TirrpomTRW9gtP2U7` |
+| Vault | `FVJq2L9UbdHbTHd3g8qW9RACNQjGnFgaag8gqNzrq6z5` |
+| SOL reserve | `CKtoBdAuXB7AJR5kUjmjkHLeStQjUnYe2crtS5kp8gF1` |
+| Burn state | `6dyDq8dUQq8VhE5vqXWSN1KzumsQWgeQkcDwhQptt2jj` |
+| Burn authority | `75qqs7K5JXpccypy37aj3uwoZFYWKZ7wMao6y4xw3ybC` |
+| Burn reserve | `6qV86Gd5SQ1YGn3TJCgXwZhmSz8m6PxDJSbL7at1Ra9v` |
+| Metadata | `HFMgvqqxdzPXjR6xGN8jiJD14sXT28kYFFTTWgr5herR` |
 
 The state account stores `token_vault` and `sol_reserve` as `Pubkey::default()`. They are **reserved fields** and are never updated. Instructions do not read them; instead they validate the supplied accounts against the PDA seeds and against the state PDA's ownership. Treat those fields as unused space.
 

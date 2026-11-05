@@ -86,12 +86,32 @@ const BURN_STATE_SEED = Buffer.from('burn_state')
 const BURN_AUTHORITY_SEED = Buffer.from('burn_authority')
 
 /**
+ * Metaplex Token Metadata. Metadata can only be created while the mint
+ * authority is still active, so this step must run before the revoke step.
+ */
+const METADATA_PROGRAM_ID = new PublicKey(
+  'metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s',
+)
+const METADATA_NAME = 'KALYTH'
+const METADATA_SYMBOL = 'KLYTH'
+const METADATA_URI =
+  process.env.REBUILD_METADATA_URI ||
+  'https://mcybernet.github.io/KALYTH/metadata.json'
+
+/**
+ * Instruction discriminator for CreateMetadataAccountV3 in
+ * mpl-token-metadata 3.x (a single byte, not the 8-byte Anchor layout).
+ */
+const CREATE_METADATA_ACCOUNT_V3_DISCRIMINATOR = 33
+
+/**
  * The community allocation needs its own token account, but both the treasury
  * and community accounts are controlled by the treasury wallet. A plain ATA
  * would collide with the treasury ATA, so derive a deterministic seeded
- * account instead. No extra keypair is required.
+ * account instead. The seed includes a short mint prefix so a rebuild cannot
+ * collide with a previous mint's community account.
  */
-const COMMUNITY_ACCOUNT_SEED = 'nbr-community'
+const COMMUNITY_ACCOUNT_SEED_PREFIX = 'community-'
 
 function resolveAuthorityPath() {
   const configured =
@@ -126,6 +146,55 @@ function writeU128LE(buffer, value, offset) {
 
 function pda(seed, mint) {
   return PublicKey.findProgramAddressSync([seed, mint.toBuffer()], PROGRAM_ID)[0]
+}
+
+function metadataPda(mint) {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from('metadata'), METADATA_PROGRAM_ID.toBuffer(), mint.toBuffer()],
+    METADATA_PROGRAM_ID,
+  )[0]
+}
+
+function borshString(value) {
+  const bytes = Buffer.from(value, 'utf8')
+  const length = Buffer.alloc(4)
+  length.writeUInt32LE(bytes.length, 0)
+  return Buffer.concat([length, bytes])
+}
+
+/**
+ * Hand-encoded CreateMetadataAccountV3 instruction. The layout is:
+ *   u8 discriminator | string name | string symbol | string uri |
+ *   u16 seller_fee_basis_points | Option<Vec<Creator>> |
+ *   Option<Collection> | Option<Uses> | bool is_mutable |
+ *   Option<CollectionDetails>
+ */
+function buildCreateMetadataInstruction(authority, mint, metadata) {
+  const data = Buffer.concat([
+    Buffer.from([CREATE_METADATA_ACCOUNT_V3_DISCRIMINATOR]),
+    borshString(METADATA_NAME),
+    borshString(METADATA_SYMBOL),
+    borshString(METADATA_URI),
+    Buffer.from([0, 0]), // seller_fee_basis_points = 0
+    Buffer.from([0]), // creators = None
+    Buffer.from([0]), // collection = None
+    Buffer.from([0]), // uses = None
+    Buffer.from([1]), // is_mutable = true
+    Buffer.from([0]), // collection_details = None
+  ])
+
+  return {
+    programId: METADATA_PROGRAM_ID,
+    keys: [
+      { pubkey: metadata, isSigner: false, isWritable: true },
+      { pubkey: mint, isSigner: false, isWritable: false },
+      { pubkey: authority, isSigner: true, isWritable: false }, // mint authority
+      { pubkey: authority, isSigner: true, isWritable: true }, // payer
+      { pubkey: authority, isSigner: false, isWritable: false }, // update authority
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data,
+  }
 }
 
 function ata(mint, owner) {
@@ -267,12 +336,16 @@ async function main() {
   const solReserve = pda(SOL_RESERVE_SEED, mint)
   const burnState = pda(BURN_STATE_SEED, mint)
   const burnAuthority = pda(BURN_AUTHORITY_SEED, mint)
+  const metadata = metadataPda(mint)
   const vault = ata(mint, curveState)
   const burnReserve = ata(mint, burnAuthority)
   const treasuryAta = getAssociatedTokenAddressSync(mint, authority.publicKey)
+  const communitySeed = `${COMMUNITY_ACCOUNT_SEED_PREFIX}${mint
+    .toBase58()
+    .slice(0, 8)}`
   const communityAccount = await PublicKey.createWithSeed(
     authority.publicKey,
-    COMMUNITY_ACCOUNT_SEED,
+    communitySeed,
     TOKEN_PROGRAM_ID,
   )
 
@@ -292,6 +365,8 @@ async function main() {
   console.log(`Burn state:       ${burnState.toBase58()}`)
   console.log(`Burn authority:   ${burnAuthority.toBase58()}`)
   console.log(`Burn reserve:     ${burnReserve.toBase58()}`)
+  console.log(`Metadata:         ${metadata.toBase58()}`)
+  console.log(`Metadata URI:     ${METADATA_URI}`)
   console.log(`Treasury ATA:     ${treasuryAta.toBase58()}`)
   console.log(`Community acct:   ${communityAccount.toBase58()}`)
   console.log('')
@@ -394,13 +469,30 @@ async function main() {
     )
   }
 
-  // 5. Burn state -----------------------------------------------------------
+  // 5. Metaplex metadata -----------------------------------------------------
+  const metadataInfo = await accountExists(connection, metadata)
+  if (!metadataInfo) {
+    if (mintInfo) {
+      const metadataMint = decodeMint(mintInfo)
+      if (!metadataMint.mintAuthority?.equals(authority.publicKey)) {
+        throw new Error(
+          'Metadata is missing but the mint authority is already revoked. ' +
+            'Create metadata before revoking, or use a fresh mint.',
+        )
+      }
+    }
+    plan.push(
+      `create Metaplex metadata (${METADATA_NAME} / ${METADATA_SYMBOL})`,
+    )
+  }
+
+  // 6. Burn state -----------------------------------------------------------
   const burnStateInfo = await accountExists(connection, burnState)
   if (!burnStateInfo) {
     plan.push(`initialize burn (cap ${formatNbr(DAILY_CAP_RAW)}/day)`)
   }
 
-  // 6. Revoke mint authority ------------------------------------------------
+  // 7. Revoke mint authority ------------------------------------------------
   const currentMintInfo = mintInfo ?? (await accountExists(connection, mint))
   const currentMint = currentMintInfo ? decodeMint(currentMintInfo) : null
   const needsRevoke = Boolean(
@@ -410,7 +502,7 @@ async function main() {
     plan.push('revoke mint authority')
   }
 
-  // 7. Fund SOL reserve -----------------------------------------------------
+  // 8. Fund SOL reserve -----------------------------------------------------
   const reserveLamports = await connection.getBalance(solReserve, 'confirmed')
   const reserveTopUp = SOL_RESERVE_SEED_LAMPORTS - reserveLamports
   if (reserveTopUp > 0) {
@@ -438,6 +530,7 @@ async function main() {
       burnState,
       burnAuthority,
       burnReserve,
+      metadata,
       treasuryAta,
       communityAccount,
       signatures,
@@ -486,7 +579,7 @@ async function main() {
           SystemProgram.createAccountWithSeed({
             fromPubkey: authority.publicKey,
             basePubkey: authority.publicKey,
-            seed: COMMUNITY_ACCOUNT_SEED,
+            seed: communitySeed,
             newAccountPubkey: account.address,
             lamports: rent,
             space: ACCOUNT_SIZE,
@@ -548,6 +641,15 @@ async function main() {
       connection,
       `mint allocations (${mintDeficits.map((item) => item.label).join(', ')})`,
       instructions,
+      [authority],
+    )
+  }
+
+  if (!metadataInfo) {
+    signatures.createMetadata = await send(
+      connection,
+      'create Metaplex metadata',
+      [buildCreateMetadataInstruction(authority.publicKey, mint, metadata)],
       [authority],
     )
   }
@@ -629,6 +731,11 @@ async function main() {
   console.log(`Treasury ATA:      ${formatNbr(finalTreasury.amount)} KLYTH`)
   console.log(`Community acct:    ${formatNbr(finalCommunity.amount)} KLYTH`)
   console.log(`SOL reserve:       ${((await connection.getBalance(solReserve)) / 1e9).toFixed(4)} SOL`)
+  console.log(
+    `Metadata:          ${
+      (await accountExists(connection, metadata)) ? metadata.toBase58() : 'missing'
+    }`,
+  )
 
   writeDeployment({
     deploymentFile,
@@ -640,6 +747,7 @@ async function main() {
     burnState,
     burnAuthority,
     burnReserve,
+    metadata,
     treasuryAta,
     communityAccount,
     signatures,
@@ -664,6 +772,7 @@ function writeDeployment({
   burnState,
   burnAuthority,
   burnReserve,
+  metadata,
   treasuryAta,
   communityAccount,
   signatures,
@@ -681,6 +790,9 @@ function writeDeployment({
     burnState: burnState.toBase58(),
     burnAuthority: burnAuthority.toBase58(),
     burnReserve: burnReserve.toBase58(),
+    metadataProgram: METADATA_PROGRAM_ID.toBase58(),
+    metadata: metadata.toBase58(),
+    metadataUri: METADATA_URI,
     treasuryAta: treasuryAta.toBase58(),
     communityAccount: communityAccount.toBase58(),
     allocation: {

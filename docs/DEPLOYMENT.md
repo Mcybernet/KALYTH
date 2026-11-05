@@ -11,16 +11,39 @@ This guide covers building and deploying KALYTH to **Solana Devnet**, initializi
 | Item | Address |
 | --- | --- |
 | Program | `CzAyXzhjECqNBPYMiU7eCVGYZVcc5DQKHXXxV4xGxBSw` |
-| KLYTH mint | `GuaBwGkmwKJqU5AkxCoFQdGqY1UsDGtswJ9KGphvhkeK` |
-| Curve state PDA | `DGEu6BDgzQrb2h1rLNiPaAS4wZRxnwg7DVn9Yg2K3QPv` |
-| Token vault | `86ay5krMiVDKc1HQfpCJ65hwcJKkZLZzHaXuRTmApRBo` |
-| SOL reserve PDA | `83r1wg2j89ME5mjFJYrXQg9DiVHh3K6GPjD2CG6tWp3J` |
+| KLYTH mint | `4MUt8MMxTDYvd35zTnysuJXt29xg5MH7Kb65sB73sN2W` |
+| Metaplex metadata | `HFMgvqqxdzPXjR6xGN8jiJD14sXT28kYFFTTWgr5herR` |
+| Curve state PDA | `98NZ4NrFdsk6uT6zbHuDBSf7YC6TirrpomTRW9gtP2U7` |
+| Token vault | `FVJq2L9UbdHbTHd3g8qW9RACNQjGnFgaag8gqNzrq6z5` |
+| SOL reserve PDA | `CKtoBdAuXB7AJR5kUjmjkHLeStQjUnYe2crtS5kp8gF1` |
 | Treasury / authority | `2sM66rkL4FziKY9koz9wAHbtbUeLYwyTU5KCJEbRXuRN` |
-| Burn state PDA | `Erm5f4LCVMmejQrAUVfhTfHKzzs6Au66qtdRoTbd5hQ6` |
-| Burn authority PDA | `FuRgsStULTV2enAXEkAv9NYypxbv6Vcp6vXo2nWh7rN9` |
-| Burn reserve | `V6yBiGHso17rfhD8qVCiJqHdSVAfPL5QWfp3EKevJzG` |
+| Burn state PDA | `6dyDq8dUQq8VhE5vqXWSN1KzumsQWgeQkcDwhQptt2jj` |
+| Burn authority PDA | `75qqs7K5JXpccypy37aj3uwoZFYWKZ7wMao6y4xw3ybC` |
+| Burn reserve | `6qV86Gd5SQ1YGn3TJCgXwZhmSz8m6PxDJSbL7at1Ra9v` |
 
 The current deployment was built with **Solana Playground** from `programs/nebula_curve/src/lib_combined.rs`. The Anchor workspace is the reviewable source of truth. You only need to redeploy if you are changing the program; the frontend can be hosted independently.
+
+### On-chain metadata
+
+The mint carries Metaplex Token Metadata created **before** the mint authority
+was revoked. Wallets and Explorers read it from the metadata PDA.
+
+| Field | Value |
+| --- | --- |
+| Metadata program | `metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s` |
+| Metadata PDA | `HFMgvqqxdzPXjR6xGN8jiJD14sXT28kYFFTTWgr5herR` |
+| Name / symbol | `KALYTH` / `KLYTH` |
+| URI | `https://mcybernet.github.io/KALYTH/metadata.json` |
+
+The URI is served by the frontend deployment from
+`app/frontend/public/metadata.json`, which points at the logo under
+`public/brand/`. Because the mint authority is revoked, the metadata can never
+be created again for this mint; only the update authority (the treasury) can
+change mutable fields.
+
+A rebuild with metadata is possible with `scripts/rebuild-devnet.mjs`. The
+script creates the metadata account before the revoke step and refuses to
+continue if metadata is missing after the authority is already gone.
 
 ---
 
@@ -298,8 +321,8 @@ Use Solana Explorer with `?cluster=devnet`, or the CLI:
 
 ```bash
 solana program show CzAyXzhjECqNBPYMiU7eCVGYZVcc5DQKHXXxV4xGxBSw
-solana account DGEu6BDgzQrb2h1rLNiPaAS4wZRxnwg7DVn9Yg2K3QPv
-solana account 83r1wg2j89ME5mjFJYrXQg9DiVHh3K6GPjD2CG6tWp3J
+solana account 98NZ4NrFdsk6uT6zbHuDBSf7YC6TirrpomTRW9gtP2U7
+solana account CKtoBdAuXB7AJR5kUjmjkHLeStQjUnYe2crtS5kp8gF1
 ```
 
 Check:
@@ -313,8 +336,8 @@ Check:
 With `spl-token` installed:
 
 ```bash
-spl-token account-info 86ay5krMiVDKc1HQfpCJ65hwcJKkZLZzHaXuRTmApRBo
-spl-token supply GuaBwGkmwKJqU5AkxCoFQdGqY1UsDGtswJ9KGphvhkeK
+spl-token account-info FVJq2L9UbdHbTHd3g8qW9RACNQjGnFgaag8gqNzrq6z5
+spl-token supply 4MUt8MMxTDYvd35zTnysuJXt29xg5MH7Kb65sB73sN2W
 ```
 
 ### Application smoke test

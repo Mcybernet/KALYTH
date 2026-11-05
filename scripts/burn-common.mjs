@@ -50,12 +50,12 @@ export const PROGRAM_ID = new PublicKey(
   'CzAyXzhjECqNBPYMiU7eCVGYZVcc5DQKHXXxV4xGxBSw',
 )
 export const KLYTH_MINT = new PublicKey(
-  'GuaBwGkmwKJqU5AkxCoFQdGqY1UsDGtswJ9KGphvhkeK',
+  '4MUt8MMxTDYvd35zTnysuJXt29xg5MH7Kb65sB73sN2W',
 )
 /** Backwards-compatible alias while scripts migrate to the KLYTH name. */
 export const NBR_MINT = KLYTH_MINT
 export const BURN_RESERVE_TOKEN_ACCOUNT = new PublicKey(
-  'V6yBiGHso17rfhD8qVCiJqHdSVAfPL5QWfp3EKevJzG',
+  '6qV86Gd5SQ1YGn3TJCgXwZhmSz8m6PxDJSbL7at1Ra9v',
 )
 export const TOKEN_PROGRAM_ID = new PublicKey(
   'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',

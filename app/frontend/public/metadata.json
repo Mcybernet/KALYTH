@@ -1,0 +1,22 @@
+{
+  "name": "KALYTH",
+  "symbol": "KLYTH",
+  "description": "KALYTH (KLYTH) is a fixed-supply Solana Devnet token with an on-chain bonding-curve market and an automatic daily burn of 800,000 KLYTH until the supply reaches 60,000,000.",
+  "image": "https://mcybernet.github.io/KALYTH/brand/klyth-logo.png",
+  "external_url": "https://mcybernet.github.io/KALYTH/",
+  "attributes": [
+    { "trait_type": "Network", "value": "Solana Devnet" },
+    { "trait_type": "Initial supply", "value": "100000000" },
+    { "trait_type": "Final supply", "value": "60000000" },
+    { "trait_type": "Daily burn", "value": "800000" }
+  ],
+  "properties": {
+    "category": "fungible",
+    "files": [
+      {
+        "uri": "https://mcybernet.github.io/KALYTH/brand/klyth-logo.png",
+        "type": "image/png"
+      }
+    ]
+  }
+}

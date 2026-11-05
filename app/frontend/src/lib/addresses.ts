@@ -1,4 +1,12 @@
-import { KLYTH_MINT, PROGRAM_ID, getReserveAddress, getStateAddress, getVaultAddress } from './curve'
+import {
+  KLYTH_MINT,
+  PROGRAM_ID,
+  getBurnAuthorityAddress,
+  getBurnReserveAddress,
+  getReserveAddress,
+  getStateAddress,
+  getVaultAddress,
+} from './curve'
 
 export const MINT_ADDRESS = KLYTH_MINT.toBase58()
 export const PROGRAM_ADDRESS = PROGRAM_ID.toBase58()
@@ -7,8 +15,8 @@ export const VAULT_ADDRESS = getVaultAddress().toBase58()
 export const SOL_RESERVE_ADDRESS = getReserveAddress().toBase58()
 
 export const TREASURY_ADDRESS = '2sM66rkL4FziKY9koz9wAHbtbUeLYwyTU5KCJEbRXuRN'
-export const BURN_AUTHORITY_ADDRESS = 'FuRgsStULTV2enAXEkAv9NYypxbv6Vcp6vXo2nWh7rN9'
-export const BURN_RESERVE_TOKEN_ACCOUNT = 'V6yBiGHso17rfhD8qVCiJqHdSVAfPL5QWfp3EKevJzG'
+export const BURN_AUTHORITY_ADDRESS = getBurnAuthorityAddress().toBase58()
+export const BURN_RESERVE_TOKEN_ACCOUNT = getBurnReserveAddress().toBase58()
 
 const CLUSTER_QUERY = '?cluster=devnet'
 

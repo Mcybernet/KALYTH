@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useConnection, useWallet } from '@solana/wallet-adapter-react'
 import { PublicKey } from '@solana/web3.js'
 import { getAssociatedTokenAddress } from '@solana/spl-token'
+import { KLYTH_MINT } from '../lib/curve'
 
-const KLYTH_MINT = new PublicKey('GuaBwGkmwKJqU5AkxCoFQdGqY1UsDGtswJ9KGphvhkeK')
 const POLL_INTERVAL = 20_000
 
 type WalletBalances = {

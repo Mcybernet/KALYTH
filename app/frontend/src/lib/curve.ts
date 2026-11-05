@@ -11,7 +11,7 @@ import {
 } from '@solana/spl-token'
 
 export const PROGRAM_ID = new PublicKey('CzAyXzhjECqNBPYMiU7eCVGYZVcc5DQKHXXxV4xGxBSw')
-export const KLYTH_MINT = new PublicKey('GuaBwGkmwKJqU5AkxCoFQdGqY1UsDGtswJ9KGphvhkeK')
+export const KLYTH_MINT = new PublicKey('4MUt8MMxTDYvd35zTnysuJXt29xg5MH7Kb65sB73sN2W')
 
 export const KLYTH_DECIMALS = 6
 export const SOL_DECIMALS = 9
@@ -29,6 +29,8 @@ export const SLOPE_DIVISOR = 1e15
 
 const STATE_SEED = 'bonding_curve'
 const RESERVE_SEED = 'sol_reserve'
+const BURN_AUTHORITY_SEED = 'burn_authority'
+const BURN_STATE_SEED = 'burn_state'
 
 export const BUY_DISCRIMINATOR = Buffer.from([102, 6, 61, 18, 1, 218, 235, 234])
 export const SELL_DISCRIMINATOR = Buffer.from([51, 230, 133, 164, 1, 127, 131, 173])
@@ -62,6 +64,28 @@ export function getReserveAddress(): PublicKey {
 
 export function getVaultAddress(): PublicKey {
   return getAssociatedTokenAddressSync(KLYTH_MINT, getStateAddress(), true)
+}
+
+export function getBurnAuthorityAddress(): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from(BURN_AUTHORITY_SEED), KLYTH_MINT.toBuffer()],
+    PROGRAM_ID,
+  )[0]
+}
+
+export function getBurnStateAddress(): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from(BURN_STATE_SEED), KLYTH_MINT.toBuffer()],
+    PROGRAM_ID,
+  )[0]
+}
+
+export function getBurnReserveAddress(): PublicKey {
+  return getAssociatedTokenAddressSync(
+    KLYTH_MINT,
+    getBurnAuthorityAddress(),
+    true,
+  )
 }
 
 export function getTokenAccountAddress(owner: PublicKey): PublicKey {
