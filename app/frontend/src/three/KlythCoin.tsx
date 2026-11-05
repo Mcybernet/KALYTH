@@ -154,9 +154,9 @@ export default function KlythCoin() {
 
     const debris = Array.from({ length: 46 }, () => ({
       angle: Math.random() * Math.PI * 2,
-      radius: 30 + Math.random() * (FACE_SIZE / 2 - 90),
+      radius: 70 + Math.random() * (FACE_SIZE / 2 - 160),
       speed: 0.006 + Math.random() * 0.018,
-      size: 0.9 + Math.random() * 2.3,
+      size: 7 + Math.random() * 13,
       warm: Math.random() > 0.35,
     }))
 
@@ -194,11 +194,12 @@ export default function KlythCoin() {
       backCtx.fill()
 
       // Galaxy debris particles orbiting the black hole.
+      backCtx.globalCompositeOperation = 'lighter'
       for (const particle of debris) {
         particle.angle += particle.speed * delta
         const x = c + Math.cos(particle.angle) * particle.radius
         const y = c + Math.sin(particle.angle) * particle.radius
-        const alpha = 0.35 * particle.size
+        const alpha = Math.min(0.6, 0.22 * particle.size)
         backCtx.fillStyle = particle.warm
           ? `rgba(224, 166, 75, ${alpha})`
           : `rgba(190, 200, 220, ${alpha * 0.8})`
@@ -206,6 +207,7 @@ export default function KlythCoin() {
         backCtx.arc(x, y, particle.size, 0, Math.PI * 2)
         backCtx.fill()
       }
+      backCtx.globalCompositeOperation = 'source-over'
 
       backTexture.needsUpdate = true
     }
