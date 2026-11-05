@@ -277,6 +277,27 @@ export default function ChainField() {
         block.position.z += (base.z + target.z - block.position.z) * damping
       })
 
+      // Keep adjacent blocks from overlapping or colliding.
+      for (let i = 1; i < blocks.length; i += 1) {
+        const prev = blocks[i - 1]
+        const next = blocks[i]
+        const dx = next.position.x - prev.position.x
+        const dy = next.position.y - prev.position.y
+        const dz = next.position.z - prev.position.z
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
+        const minDist = 0.98
+        if (dist < minDist && dist > 0) {
+          const push = (minDist - dist) / 2
+          const dir = new THREE.Vector3(dx, dy, dz).normalize()
+          prev.position.x -= dir.x * push
+          prev.position.y -= dir.y * push
+          prev.position.z -= dir.z * push
+          next.position.x += dir.x * push
+          next.position.y += dir.y * push
+          next.position.z += dir.z * push
+        }
+      }
+
       // Update link positions to follow drifting blocks.
       updateLinks()
 
