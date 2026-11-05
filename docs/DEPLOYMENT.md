@@ -266,16 +266,27 @@ Run one burn manually (the first call is allowed immediately):
 node burn-daily.mjs
 ```
 
-For unattended operation, configure one of:
+For unattended operation, two keepers are configured:
 
-- **GitHub Actions:** set `DEVNET_RPC_URL` and `BURN_CRANK_KEYPAIR` repository
-  secrets. The workflow runs at `00:05` and `00:35` UTC as a safety net.
-- **Windows Task Scheduler / cron:** run `node scripts/burn-daily.mjs` every few
-  hours with a funded crank keypair. The 23h50m window makes extra runs no-ops
-  while a 6-hour cadence protects against a missed day.
+- **GitHub Actions:** `.github/workflows/burn-daily.yml` runs four times a day
+  at `00:05`, `06:05`, `12:05`, and `18:05` UTC. Repository secrets
+  `DEVNET_RPC_URL` and `BURN_CRANK_KEYPAIR` are already set on
+  `Mcybernet/KALYTH`. The crank wallet is dedicated and holds only fee SOL.
+- **Windows Task Scheduler / cron:** the local task runs every 6 hours. The
+  23h50m window makes extra runs no-ops.
 
-The crank only pays the fee. It cannot choose the amount or destination, and it
+Both send the same permissionless instruction, so they cannot double-burn. The
+crank only pays the fee. It cannot choose the amount or destination, and it
 cannot withdraw the reserve.
+
+A safe test without sending a transaction:
+
+```bash
+gh workflow run burn-daily.yml -f dry_run=true
+```
+
+or trigger **Daily KLYTH burn → Run workflow** with `dry_run` checked in the
+Actions tab.
 
 ---
 

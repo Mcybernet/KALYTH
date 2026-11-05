@@ -91,11 +91,14 @@ Add repository secrets:
 | `DEVNET_RPC_URL` | Devnet RPC endpoint |
 | `BURN_CRANK_KEYPAIR` | Funded Devnet keypair as a JSON array or base58 secret |
 
-The workflow runs at `00:05` and `00:35` UTC. The second run is a safety net for
-scheduler delay; the on-chain window makes it a no-op if the first one
-succeeded. Scheduled workflows only run from the default branch, and GitHub
-disables the schedule after 60 days without repository activity, so check the
-Actions tab periodically or keep the repo active for the full 50-day burn plan.
+Both secrets are already configured on `Mcybernet/KALYTH`. The crank is a
+dedicated wallet (`7B2P…P4sr`) holding 0.2 SOL, not the treasury key.
+
+The workflow runs at `00:05`, `06:05`, `12:05`, and `18:05` UTC. Extra runs are
+no-ops because of the on-chain 23h50m window. Scheduled workflows only run from
+the default branch, and GitHub disables the schedule after 60 days without
+repository activity, so check the Actions tab periodically or keep the repo
+active for the full 50-day burn plan.
 
 Never put a keypair in the repository. `BURN_CRANK_KEYPAIR` should hold only
 enough Devnet SOL for transaction fees.
@@ -108,6 +111,8 @@ Set `DRY_RUN=1` to print the plan without sending:
 DRY_RUN=1 node migrate-burn.mjs
 DRY_RUN=1 node burn-daily.mjs
 ```
+
+The GitHub workflow also accepts a `dry_run` input when dispatched manually.
 
 ## Error codes
 
