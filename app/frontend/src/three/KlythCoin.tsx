@@ -142,33 +142,65 @@ export default function KlythCoin() {
       }
     }
 
-    // Back face: a plain eclipse mark so the reverse still reads as a coin.
+    // Back face: an eclipse emblem with a wordmark, so the reverse still reads
+    // as a struck coin rather than a blank disc.
     const backCanvas = document.createElement('canvas')
     backCanvas.width = FACE_SIZE
     backCanvas.height = FACE_SIZE
     const backCtx = backCanvas.getContext('2d')
     if (backCtx) {
       const c = FACE_SIZE / 2
-      paintFace(backCtx, '#463521', '#251d15', '#101014')
+      paintFace(backCtx, '#4a3823', '#281f16', '#0f0f13')
 
       drawRing(backCtx)
 
-      backCtx.fillStyle = '#050506'
-      backCtx.strokeStyle = '#e0a64b'
-      backCtx.lineWidth = 6
+      // Soft corona around the eclipse so the emblem sits in a warm halo
+      // instead of floating on the field.
+      const corona = backCtx.createRadialGradient(
+        c,
+        c,
+        c * 0.2,
+        c,
+        c,
+        c * 0.5,
+      )
+      corona.addColorStop(0, 'rgba(224, 166, 75, 0)')
+      corona.addColorStop(0.62, 'rgba(224, 166, 75, 0.1)')
+      corona.addColorStop(0.84, 'rgba(224, 166, 75, 0.26)')
+      corona.addColorStop(1, 'rgba(224, 166, 75, 0)')
+      backCtx.fillStyle = corona
       backCtx.beginPath()
-      backCtx.arc(c, c, c * 0.42, 0, Math.PI * 2)
+      backCtx.arc(c, c, c * 0.5, 0, Math.PI * 2)
       backCtx.fill()
+
+      // Eclipse body: dark core ringed by a crisp warm edge.
+      backCtx.fillStyle = '#050506'
+      backCtx.beginPath()
+      backCtx.arc(c, c, c * 0.33, 0, Math.PI * 2)
+      backCtx.fill()
+
+      backCtx.strokeStyle = 'rgba(224, 166, 75, 0.9)'
+      backCtx.lineWidth = 5
+      backCtx.beginPath()
+      backCtx.arc(c, c, c * 0.33, 0, Math.PI * 2)
       backCtx.stroke()
 
-      backCtx.strokeStyle = 'rgba(201, 206, 214, 0.5)'
+      backCtx.strokeStyle = 'rgba(201, 206, 214, 0.24)'
       backCtx.lineWidth = 2
       backCtx.beginPath()
-      backCtx.arc(c, c, c * 0.3, 0, Math.PI * 2)
+      backCtx.arc(c, c, c * 0.24, 0, Math.PI * 2)
       backCtx.stroke()
 
-      backCtx.fillStyle = '#e0a64b'
-      backCtx.fillRect(c - c * 0.16, c - 2, c * 0.32, 4)
+      backCtx.textAlign = 'center'
+      backCtx.textBaseline = 'middle'
+
+      backCtx.fillStyle = 'rgba(244, 215, 154, 0.92)'
+      backCtx.font = '600 40px "Space Grotesk", Inter, system-ui, sans-serif'
+      backCtx.fillText('K A L Y T H', c, c + c * 0.54)
+
+      backCtx.fillStyle = 'rgba(224, 166, 75, 0.5)'
+      backCtx.font = '500 19px "IBM Plex Mono", ui-monospace, monospace'
+      backCtx.fillText('S O L A N A   D E V N E T', c, c + c * 0.68)
     }
 
     const backTexture = new THREE.CanvasTexture(backCanvas)
@@ -226,9 +258,14 @@ export default function KlythCoin() {
     glowCanvas.height = 256
     const glowCtx = glowCanvas.getContext('2d')
     if (glowCtx) {
-      const gradient = glowCtx.createRadialGradient(128, 128, 8, 128, 128, 128)
-      gradient.addColorStop(0, 'rgba(224, 166, 75, 0.42)')
-      gradient.addColorStop(0.35, 'rgba(201, 106, 58, 0.18)')
+      // Smooth full-field falloff: the sprite is scaled to exactly fill the
+      // canvas, so the gradient must reach zero before it touches any edge.
+      const gradient = glowCtx.createRadialGradient(128, 128, 6, 128, 128, 181)
+      gradient.addColorStop(0, 'rgba(224, 166, 75, 0.34)')
+      gradient.addColorStop(0.28, 'rgba(212, 130, 62, 0.2)')
+      gradient.addColorStop(0.5, 'rgba(201, 106, 58, 0.1)')
+      gradient.addColorStop(0.72, 'rgba(201, 106, 58, 0.035)')
+      gradient.addColorStop(0.88, 'rgba(201, 106, 58, 0.008)')
       gradient.addColorStop(1, 'rgba(0, 0, 0, 0)')
       glowCtx.fillStyle = gradient
       glowCtx.fillRect(0, 0, 256, 256)
@@ -303,6 +340,15 @@ export default function KlythCoin() {
       renderer.setSize(width, height, false)
       camera.aspect = width / height
       camera.updateProjectionMatrix()
+
+      // Fit the halo inside the frustum instead of letting the sprite run past
+      // the canvas edge, which produced a hard orange cut at the border.
+      const glowDistance = camera.position.z - glow.position.z
+      const viewHeight =
+        2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * glowDistance
+      const viewWidth = viewHeight * camera.aspect
+      const fit = Math.min(viewWidth, viewHeight)
+      glow.scale.set(fit, fit, 1)
     }
     const resizeObserver = new ResizeObserver(resize)
     resizeObserver.observe(mount)
