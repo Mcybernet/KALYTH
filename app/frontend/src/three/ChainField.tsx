@@ -77,9 +77,9 @@ export default function ChainField() {
     for (let i = 0; i < blockCount; i += 1) {
       const offset = i - (blockCount - 1) / 2
       const position = new THREE.Vector3(
-        offset * spacing,
-        Math.sin(i * 0.9) * 0.16,
-        Math.cos(i * 0.7) * 0.12,
+        offset * spacing + (Math.random() - 0.5) * 0.3,
+        Math.sin(i * 0.9) * 0.16 + (Math.random() - 0.5) * 0.2,
+        Math.cos(i * 0.7) * 0.12 + (Math.random() - 0.5) * 0.15,
       )
       centers.push(position)
 
@@ -106,13 +106,17 @@ export default function ChainField() {
     }
 
     // ----------------------------------------------------------------- links --
-    const linkPoints: number[] = []
-    for (let i = 0; i < centers.length - 1; i += 1) {
-      linkPoints.push(centers[i].x, centers[i].y, centers[i].z)
-      linkPoints.push(centers[i + 1].x, centers[i + 1].y, centers[i + 1].z)
-    }
     const linkGeometry = new THREE.BufferGeometry()
-    linkGeometry.setAttribute('position', new THREE.Float32BufferAttribute(linkPoints, 3))
+    const updateLinks = () => {
+      const linkPoints: number[] = []
+      for (let i = 0; i < centers.length - 1; i += 1) {
+        linkPoints.push(centers[i].x, centers[i].y, centers[i].z)
+        linkPoints.push(centers[i + 1].x, centers[i + 1].y, centers[i + 1].z)
+      }
+      linkGeometry.setAttribute('position', new THREE.Float32BufferAttribute(linkPoints, 3))
+      linkGeometry.attributes.position.needsUpdate = true
+    }
+    updateLinks()
     const linkMaterial = new THREE.LineBasicMaterial({
       color: 0x8c8578,
       transparent: true,
@@ -224,6 +228,14 @@ export default function ChainField() {
     const introStart = performance.now()
     let frameId = 0
 
+    // Random drift targets for organic motion.
+    const driftTargets: Array<{ x: number; y: number; z: number }> = centers.map(() => ({
+      x: (Math.random() - 0.5) * 0.4,
+      y: (Math.random() - 0.5) * 0.3,
+      z: (Math.random() - 0.5) * 0.2,
+    }))
+    let nextDriftUpdate = 0
+
     const frame = () => {
       frameId = requestAnimationFrame(frame)
       if (!inView || !pageVisible) {
@@ -244,6 +256,29 @@ export default function ChainField() {
       chain.rotation.y = Math.sin(elapsed * 0.24) * 0.34
       chain.rotation.x = Math.sin(elapsed * 0.17) * 0.07
       chain.position.y = Math.sin(elapsed * 0.6) * 0.04
+
+      // Update random drift targets every 3-5 seconds.
+      if (elapsed > nextDriftUpdate) {
+        driftTargets.forEach((target) => {
+          target.x = (Math.random() - 0.5) * 0.4
+          target.y = (Math.random() - 0.5) * 0.3
+          target.z = (Math.random() - 0.5) * 0.2
+        })
+        nextDriftUpdate = elapsed + 3 + Math.random() * 2
+      }
+
+      // Smoothly move blocks toward their drift targets.
+      blocks.forEach((block, index) => {
+        const base = centers[index]
+        const target = driftTargets[index]
+        const damping = Math.min(1, delta * 0.8)
+        block.position.x += (base.x + target.x - block.position.x) * damping
+        block.position.y += (base.y + target.y - block.position.y) * damping
+        block.position.z += (base.z + target.z - block.position.z) * damping
+      })
+
+      // Update link positions to follow drifting blocks.
+      updateLinks()
 
       packets.forEach((packet) => {
         const progress = (elapsed * 0.16 + packet.userData.offset) % 1
