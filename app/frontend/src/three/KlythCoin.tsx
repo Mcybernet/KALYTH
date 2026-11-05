@@ -142,7 +142,7 @@ export default function KlythCoin() {
       }
     }
 
-    // Back face: animated black hole with galaxy debris, redrawn every frame.
+    // Back face: animated vintage analog clock (Big Ben style), redrawn every frame.
     const backCanvas = document.createElement('canvas')
     backCanvas.width = FACE_SIZE
     backCanvas.height = FACE_SIZE
@@ -152,15 +152,9 @@ export default function KlythCoin() {
     backTexture.colorSpace = THREE.SRGBColorSpace
     backTexture.anisotropy = renderer.capabilities.getMaxAnisotropy()
 
-    const debris = Array.from({ length: 46 }, () => ({
-      angle: Math.random() * Math.PI * 2,
-      radius: 70 + Math.random() * (FACE_SIZE / 2 - 160),
-      speed: 0.006 + Math.random() * 0.018,
-      size: 7 + Math.random() * 13,
-      warm: Math.random() > 0.35,
-    }))
+    const ROMAN_NUMERALS = ['XII', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI']
 
-    const drawBackFace = (delta: number) => {
+    const drawBackFace = () => {
       if (!backCtx) {
         return
       }
@@ -171,43 +165,77 @@ export default function KlythCoin() {
       backCtx.fillStyle = 'rgba(6, 6, 9, 0.22)'
       backCtx.fillRect(0, 0, FACE_SIZE, FACE_SIZE)
 
-      // Black hole core.
-      const core = backCtx.createRadialGradient(c, c, 2, c, c, 42)
-      core.addColorStop(0, 'rgba(0, 0, 0, 1)')
-      core.addColorStop(0.55, 'rgba(0, 0, 0, 0.98)')
-      core.addColorStop(0.75, 'rgba(34, 18, 12, 0.92)')
-      core.addColorStop(1, 'rgba(0, 0, 0, 0)')
-      backCtx.fillStyle = core
+      // Clock face: dark rim + ivory dial (Big Ben style).
+      const face = backCtx.createRadialGradient(c, c, c * 0.05, c, c, c * 0.98)
+      face.addColorStop(0, '#3a2f24')
+      face.addColorStop(0.75, '#17100a')
+      face.addColorStop(1, '#0b0705')
+      backCtx.fillStyle = face
       backCtx.beginPath()
-      backCtx.arc(c, c, 42, 0, Math.PI * 2)
+      backCtx.arc(c, c, c, 0, Math.PI * 2)
       backCtx.fill()
 
-      // Accretion glow ring around the black hole.
-      const ring = backCtx.createRadialGradient(c, c, 40, c, c, 74)
-      ring.addColorStop(0, 'rgba(224, 166, 75, 0.05)')
-      ring.addColorStop(0.6, 'rgba(224, 166, 75, 0.22)')
-      ring.addColorStop(0.85, 'rgba(224, 166, 75, 0.08)')
-      ring.addColorStop(1, 'rgba(0, 0, 0, 0)')
-      backCtx.fillStyle = ring
+      backCtx.fillStyle = '#efe6d0'
       backCtx.beginPath()
-      backCtx.arc(c, c, 74, 0, Math.PI * 2)
+      backCtx.arc(c, c, c * 0.82, 0, Math.PI * 2)
       backCtx.fill()
 
-      // Galaxy debris particles orbiting the black hole.
-      backCtx.globalCompositeOperation = 'lighter'
-      for (const particle of debris) {
-        particle.angle += particle.speed * delta
-        const x = c + Math.cos(particle.angle) * particle.radius
-        const y = c + Math.sin(particle.angle) * particle.radius
-        const alpha = Math.min(0.6, 0.22 * particle.size)
-        backCtx.fillStyle = particle.warm
-          ? `rgba(224, 166, 75, ${alpha})`
-          : `rgba(190, 200, 220, ${alpha * 0.8})`
+      // Minute ticks.
+      for (let i = 0; i < 60; i += 1) {
+        const ang = (i / 60) * Math.PI * 2 - Math.PI / 2
+        const major = i % 5 === 0
+        const r1 = c * (major ? 0.64 : 0.69)
+        const r2 = c * (major ? 0.78 : 0.74)
+        backCtx.strokeStyle = major ? 'rgba(20, 16, 12, 0.9)' : 'rgba(20, 16, 12, 0.5)'
+        backCtx.lineWidth = major ? 2.5 : 1
         backCtx.beginPath()
-        backCtx.arc(x, y, particle.size, 0, Math.PI * 2)
-        backCtx.fill()
+        backCtx.moveTo(c + Math.cos(ang) * r1, c + Math.sin(ang) * r1)
+        backCtx.lineTo(c + Math.cos(ang) * r2, c + Math.sin(ang) * r2)
+        backCtx.stroke()
       }
-      backCtx.globalCompositeOperation = 'source-over'
+
+      // Roman numerals.
+      backCtx.fillStyle = 'rgba(20, 16, 12, 0.92)'
+      backCtx.font = '600 44px Georgia, "Times New Roman", serif'
+      backCtx.textAlign = 'center'
+      backCtx.textBaseline = 'middle'
+      const numR = c * 0.52
+      for (let h = 0; h < 12; h += 1) {
+        const ang = (h / 12) * Math.PI * 2 - Math.PI / 2
+        const x = c + Math.cos(ang) * numR
+        const y = c + Math.sin(ang) * numR
+        backCtx.fillText(ROMAN_NUMERALS[h], x, y)
+      }
+
+      // Hands, sweeping with real time.
+      const secondsTotal = Date.now() / 1000
+      const sec = secondsTotal % 60
+      const min = Math.floor(secondsTotal / 60) % 60
+      const hr = Math.floor(secondsTotal / 3600) % 12
+      const secAngle = (sec / 60) * Math.PI * 2 - Math.PI / 2
+      const minAngle = ((min + sec / 60) / 60) * Math.PI * 2 - Math.PI / 2
+      const hrAngle = ((hr + min / 60) / 12) * Math.PI * 2 - Math.PI / 2
+
+      const drawHand = (angle: number, length: number, width: number) => {
+        backCtx.strokeStyle = 'rgba(12, 10, 8, 0.95)'
+        backCtx.lineWidth = width
+        backCtx.lineCap = 'round'
+        backCtx.beginPath()
+        const tail = length * 0.35
+        backCtx.moveTo(c - Math.cos(angle) * tail, c - Math.sin(angle) * tail)
+        backCtx.lineTo(c + Math.cos(angle) * length, c + Math.sin(angle) * length)
+        backCtx.stroke()
+      }
+
+      drawHand(hrAngle, c * 0.3, c * 0.05)
+      drawHand(minAngle, c * 0.5, c * 0.07)
+      drawHand(secAngle, c * 0.66, c * 0.025)
+
+      // Center pin.
+      backCtx.fillStyle = 'rgba(12, 10, 8, 0.95)'
+      backCtx.beginPath()
+      backCtx.arc(c, c, c * 0.03, 0, Math.PI * 2)
+      backCtx.fill()
 
       backTexture.needsUpdate = true
     }
@@ -407,7 +435,7 @@ export default function KlythCoin() {
       const delta = Math.min(clock.getDelta(), 0.05)
       elapsed += delta
 
-      drawBackFace(delta)
+      drawBackFace()
 
       const introProgress = Math.min(1, (performance.now() - introStart) / 1400)
       const eased = 1 - Math.pow(1 - introProgress, 3)
