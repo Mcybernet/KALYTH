@@ -74,6 +74,10 @@ type ParsedTransaction = {
     fee: number
     preBalances: number[]
     postBalances: number[]
+    innerInstructions?: Array<{
+      index: number
+      instructions: ParsedInstruction[]
+    }> | null
   } | null
   transaction: {
     message: {
@@ -276,7 +280,15 @@ function parseBurnRecord(
   transaction: ParsedTransaction,
 ): ActivityRecord | null {
   const message = transaction.transaction.message
-  const instruction = message.instructions.find(
+  // `burn_daily` performs the SPL Token burn through a CPI, so the burn shows up
+  // in `meta.innerInstructions`, not in the top-level message instructions.
+  const instructions = [
+    ...message.instructions,
+    ...(transaction.meta?.innerInstructions ?? []).flatMap(
+      (group) => group.instructions,
+    ),
+  ]
+  const instruction = instructions.find(
     (candidate) =>
       candidate.parsed?.type === 'burn' &&
       candidate.parsed.info?.account === BURN_RESERVE_TOKEN_ACCOUNT &&
