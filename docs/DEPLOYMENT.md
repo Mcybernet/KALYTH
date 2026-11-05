@@ -177,6 +177,8 @@ After `initialize`, the signer becomes `state.authority`. Create the vault, fund
 
 ## 6. Frontend deployment (GitHub Pages)
 
+Live site: **https://mcybernet.github.io/KALYTH/**
+
 ### How it works
 
 `.github/workflows/deploy-pages.yml` builds `app/frontend` and publishes it with
@@ -188,12 +190,14 @@ The workflow reads `steps.pages.outputs.base_path` from
 bundle work both for project sites (`https://user.github.io/repo/`) and for
 user sites (`https://user.github.io/`).
 
-### One-time repository setup
+### One-time repository setup (already done)
 
 1. Push this repository to GitHub with `main` as the default branch.
 2. Open **Settings → Pages** and set **Source** to **GitHub Actions**.
 3. Push to `main`, or run **Deploy frontend to GitHub Pages** manually.
 4. The first successful run prints the public URL in the job summary.
+
+The current repository already has Pages enabled with `build_type: workflow`.
 
 No secrets are needed for the frontend. The Devnet RPC endpoint is public.
 

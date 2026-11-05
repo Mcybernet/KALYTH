@@ -114,6 +114,8 @@ The app talks to `https://api.devnet.solana.com` directly. No backend, no enviro
 
 ### Deploying the frontend
 
+Live site: **https://mcybernet.github.io/KALYTH/**
+
 The frontend is published with **GitHub Pages** through
 `.github/workflows/deploy-pages.yml`. Pushes to `main` that touch
 `app/frontend` rebuild and deploy automatically.
