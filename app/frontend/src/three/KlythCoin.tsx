@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
-import { createStudioEnvironment } from './environment'
 import { KLYTH_LOGO_URL } from '../lib/assets'
 
 /**
@@ -47,12 +46,6 @@ export default function KlythCoin() {
 
     const coin = new THREE.Group()
     scene.add(coin)
-
-    const envMap = createStudioEnvironment(renderer)
-    if (envMap) {
-      scene.environment = envMap
-      scene.environmentIntensity = 0.9
-    }
 
     // ---------------------------------------------------------------- faces --
     const FACE_SIZE = 768
@@ -101,35 +94,6 @@ export default function KlythCoin() {
       base.addColorStop(1, '#08080a')
       ctx.fillStyle = base
       ctx.fillRect(0, 0, FACE_SIZE, FACE_SIZE)
-
-      // Painted specular sweep: gives the disc a struck-metal read even before
-      // the lights and environment map touch it.
-      ctx.save()
-      ctx.beginPath()
-      ctx.arc(c, c, c - 6, 0, Math.PI * 2)
-      ctx.clip()
-
-      const sheen = ctx.createLinearGradient(0, 0, FACE_SIZE, FACE_SIZE)
-      sheen.addColorStop(0, 'rgba(255, 241, 214, 0.34)')
-      sheen.addColorStop(0.32, 'rgba(255, 232, 196, 0.08)')
-      sheen.addColorStop(0.62, 'rgba(0, 0, 0, 0)')
-      sheen.addColorStop(1, 'rgba(0, 0, 0, 0.4)')
-      ctx.fillStyle = sheen
-      ctx.fillRect(0, 0, FACE_SIZE, FACE_SIZE)
-
-      const bounce = ctx.createRadialGradient(
-        c * 1.46,
-        c * 1.52,
-        c * 0.04,
-        c * 1.46,
-        c * 1.52,
-        c * 0.86,
-      )
-      bounce.addColorStop(0, 'rgba(185, 190, 199, 0.18)')
-      bounce.addColorStop(1, 'rgba(0, 0, 0, 0)')
-      ctx.fillStyle = bounce
-      ctx.fillRect(0, 0, FACE_SIZE, FACE_SIZE)
-      ctx.restore()
     }
 
     function makeFaceCanvas() {
@@ -216,34 +180,22 @@ export default function KlythCoin() {
     const geometry = new THREE.CylinderGeometry(radius, radius, thickness, 96, 1, false)
     geometry.rotateX(Math.PI / 2)
 
-    const edgeMaterial = new THREE.MeshStandardMaterial({
+    const edgeMaterial = new THREE.MeshLambertMaterial({
       color: 0xb07a2c,
-      metalness: 1,
-      roughness: 0.26,
-      envMapIntensity: 1.25,
     })
-    const faceMaterial = new THREE.MeshStandardMaterial({
+    const faceMaterial = new THREE.MeshLambertMaterial({
       map: faceTexture,
-      metalness: 0.42,
-      roughness: 0.44,
-      envMapIntensity: 1.1,
     })
-    const backMaterial = new THREE.MeshStandardMaterial({
+    const backMaterial = new THREE.MeshLambertMaterial({
       map: backTexture,
-      metalness: 0.42,
-      roughness: 0.46,
-      envMapIntensity: 1.1,
     })
 
     const disc = new THREE.Mesh(geometry, [edgeMaterial, faceMaterial, backMaterial])
     coin.add(disc)
 
     const rimGeometry = new THREE.TorusGeometry(radius - 0.004, 0.022, 8, 96)
-    const rimMaterial = new THREE.MeshStandardMaterial({
+    const rimMaterial = new THREE.MeshLambertMaterial({
       color: 0xe0a64b,
-      metalness: 1,
-      roughness: 0.22,
-      envMapIntensity: 1.35,
     })
     const frontRim = new THREE.Mesh(rimGeometry, rimMaterial)
     frontRim.position.z = thickness / 2 + 0.006
@@ -253,18 +205,18 @@ export default function KlythCoin() {
     coin.add(backRim)
 
     // ------------------------------------------------------------- lighting --
-    const ambient = new THREE.AmbientLight(0xf4efe4, 0.55)
+    const ambient = new THREE.AmbientLight(0xf4efe4, 0.7)
     scene.add(ambient)
 
-    const key = new THREE.DirectionalLight(0xfff0d2, 2.6)
+    const key = new THREE.DirectionalLight(0xfff0d2, 1.8)
     key.position.set(2.4, 2.8, 3.4)
     scene.add(key)
 
-    const rim = new THREE.DirectionalLight(0xe0a64b, 1.6)
+    const rim = new THREE.DirectionalLight(0xe0a64b, 1.1)
     rim.position.set(-3.2, -0.6, -2.2)
     scene.add(rim)
 
-    const fill = new THREE.PointLight(0xc96a3a, 14, 12, 2)
+    const fill = new THREE.PointLight(0xc96a3a, 8, 12, 2)
     fill.position.set(-1.6, 1.4, 2.4)
     scene.add(fill)
 
@@ -455,7 +407,6 @@ export default function KlythCoin() {
       rimMaterial.dispose()
       glowMaterial.dispose()
       starMaterial.dispose()
-      envMap?.dispose()
       renderer.dispose()
       renderer.domElement.remove()
     }
