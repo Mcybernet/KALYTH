@@ -15,6 +15,7 @@ import {
 import {
   formatCandleTime,
   formatChartPrice,
+  planCandleUpdate,
   pricePrecision,
   type TimeCandle,
   type Timeframe,
@@ -41,6 +42,16 @@ const GRID_COLOR = 'rgba(60, 54, 44, 0.32)'
 const FONT =
   "'IBM Plex Mono', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
 
+function toCandlestick(candle: TimeCandle): CandlestickData<UTCTimestamp> {
+  return {
+    time: candle.time as UTCTimestamp,
+    open: candle.open,
+    high: candle.high,
+    low: candle.low,
+    close: candle.close,
+  }
+}
+
 /**
  * Fits the candles without stretching a handful of bars across the whole pane:
  * sparse datasets get a flat empty time window around them instead.
@@ -64,6 +75,7 @@ export function CandleChart({ candles, timeframe, height }: CandleChartProps) {
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const priceLineRef = useRef<IPriceLine | null>(null)
   const candleMapRef = useRef<Map<number, TimeCandle>>(new Map())
+  const candlesRef = useRef<TimeCandle[]>([])
   const intervalRef = useRef(timeframe.seconds)
   const viewKeyRef = useRef<string | null>(null)
 
@@ -166,6 +178,11 @@ export function CandleChart({ candles, timeframe, height }: CandleChartProps) {
       chartRef.current = null
       seriesRef.current = null
       priceLineRef.current = null
+      // Force the data effect to repopulate a newly created chart (StrictMode
+      // mounts effects twice in development).
+      candleMapRef.current = new Map()
+      candlesRef.current = []
+      viewKeyRef.current = null
     }
   }, [])
 
@@ -176,34 +193,61 @@ export function CandleChart({ candles, timeframe, height }: CandleChartProps) {
       return
     }
 
-    const map = new Map<number, TimeCandle>()
-    const data: CandlestickData<UTCTimestamp>[] = candles.map((candle) => {
-      map.set(candle.time, candle)
-      return {
-        time: candle.time as UTCTimestamp,
-        open: candle.open,
-        high: candle.high,
-        low: candle.low,
-        close: candle.close,
-      }
-    })
+    const timeframeChanged = viewKeyRef.current !== timeframe.id
+    const plan = timeframeChanged
+      ? ({ kind: 'reset' } as const)
+      : planCandleUpdate(candlesRef.current, candles)
 
-    candleMapRef.current = map
-    series.setData(data)
-    setHover(null)
+    if (plan.kind === 'none') {
+      return
+    }
+
+    if (plan.kind === 'incremental') {
+      // Append new buckets or rewrite the running candle without disturbing the
+      // user's zoom, pan, or scroll position.
+      const map = candleMapRef.current
+      for (let index = plan.from; index < candles.length; index += 1) {
+        const candle = candles[index]
+        map.set(candle.time, candle)
+        series.update(toCandlestick(candle))
+      }
+      setHover((current) => {
+        if (!current) {
+          return current
+        }
+        const updated = map.get(current.candle.time)
+        return updated && updated !== current.candle
+          ? { ...current, candle: updated }
+          : current
+      })
+    } else {
+      const map = new Map<number, TimeCandle>()
+      const data = candles.map((candle) => {
+        map.set(candle.time, candle)
+        return toCandlestick(candle)
+      })
+
+      candleMapRef.current = map
+      series.setData(data)
+      setHover(null)
+    }
+
+    candlesRef.current = candles
 
     const precision = pricePrecision(candles)
     series.applyOptions({
       priceFormat: { type: 'price', precision, minMove: 10 ** -precision },
     })
 
-    if (priceLineRef.current) {
-      series.removePriceLine(priceLineRef.current)
-      priceLineRef.current = null
-    }
-
     const last = candles[candles.length - 1]
-    if (last) {
+    if (priceLineRef.current) {
+      if (last) {
+        priceLineRef.current.applyOptions({ price: last.close })
+      } else {
+        series.removePriceLine(priceLineRef.current)
+        priceLineRef.current = null
+      }
+    } else if (last) {
       priceLineRef.current = series.createPriceLine({
         price: last.close,
         color: 'rgba(224, 166, 75, 0.55)',
@@ -214,9 +258,9 @@ export function CandleChart({ candles, timeframe, height }: CandleChartProps) {
       })
     }
 
-    // Keep bodies proportional: never hairline-thin, never slabs. Only refit
-    // when the timeframe changes, so a data refresh keeps the user's view.
-    if (viewKeyRef.current !== timeframe.id) {
+    // Keep bodies proportional: never hairline-thin, never slabs. Only refit on
+    // a timeframe change or a full rewrite so live refreshes preserve the view.
+    if (timeframeChanged || plan.kind === 'reset') {
       fitView(chart, candles)
       viewKeyRef.current = timeframe.id
     }

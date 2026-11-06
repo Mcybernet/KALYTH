@@ -32,6 +32,60 @@ export type TimeCandle = {
   close: number
 }
 
+export type CandleUpdatePlan =
+  | { kind: 'none' }
+  | { kind: 'reset' }
+  | { kind: 'incremental'; from: number }
+
+function sameCandle(left: TimeCandle, right: TimeCandle): boolean {
+  return (
+    left.time === right.time &&
+    left.open === right.open &&
+    left.high === right.high &&
+    left.low === right.low &&
+    left.close === right.close
+  )
+}
+
+/**
+ * Decides how the live chart should absorb a new candle list. Appending and
+ * rewriting the running candle can use `series.update()`; anything that changes
+ * older history or shortens the list needs a full `series.setData()`.
+ */
+export function planCandleUpdate(
+  previous: TimeCandle[],
+  next: TimeCandle[],
+): CandleUpdatePlan {
+  if (previous.length === 0) {
+    return next.length === 0 ? { kind: 'none' } : { kind: 'reset' }
+  }
+  if (next.length < previous.length) {
+    return { kind: 'reset' }
+  }
+
+  let shared = 0
+  while (shared < previous.length && sameCandle(previous[shared], next[shared])) {
+    shared += 1
+  }
+
+  if (shared === previous.length) {
+    return next.length === previous.length
+      ? { kind: 'none' }
+      : { kind: 'incremental', from: previous.length }
+  }
+
+  // Only the newest candle may be revised in place. Its timestamp must stay the
+  // same, otherwise `update()` would append instead of replacing the last bar.
+  if (
+    shared === previous.length - 1 &&
+    next[previous.length - 1].time === previous[previous.length - 1].time
+  ) {
+    return { kind: 'incremental', from: previous.length - 1 }
+  }
+
+  return { kind: 'reset' }
+}
+
 export function bucketStart(seconds: number, interval: number): number {
   // Anchor weekly candles to Monday 00:00 UTC.
   if (interval === 604_800) {

@@ -37,6 +37,8 @@ const SLIPPAGE_OPTIONS = [50, 100, 200] as const
 const DEFAULT_SLIPPAGE_BPS = 50n
 const FEE_BUFFER_LAMPORTS = 3_000_000n
 const TOKEN_SCALE = 10n ** BigInt(KLYTH_DECIMALS)
+const ACTIVITY_WINDOW = 40
+const ACTIVITY_POLL_MS = 25_000
 
 type TradeMode = 'buy' | 'sell'
 
@@ -125,7 +127,10 @@ export function TradePage() {
   const { setVisible: setWalletModalVisible } = useWalletModal()
   const curve = useCurveState()
   const balances = useWalletBalances()
-  const activity = useActivity({ pageSize: 40 })
+  const activity = useActivity({
+    pageSize: ACTIVITY_WINDOW,
+    pollIntervalMs: ACTIVITY_POLL_MS,
+  })
 
   const [mode, setMode] = useState<TradeMode>('buy')
   const [buyInput, setBuyInput] = useState('')
@@ -454,6 +459,7 @@ export function TradePage() {
             previewAmount={previewAmount}
             previewMode={mode}
             trades={trades}
+            historyWindow={ACTIVITY_WINDOW}
           />
         </Suspense>
 

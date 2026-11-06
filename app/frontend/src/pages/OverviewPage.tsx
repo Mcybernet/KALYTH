@@ -38,12 +38,13 @@ const BondingCurveChart = lazy(() =>
 )
 
 const TOKEN_SCALE = 1_000_000
+const ACTIVITY_WINDOW = 40
 
 export function OverviewPage() {
   const { navigate } = useNavigation()
   const { loading: dataLoading, error: dataError, mint, burnStats } = useKlythData()
   const curve = useCurveState()
-  const activity = useActivity({ pageSize: 40 })
+  const activity = useActivity({ pageSize: ACTIVITY_WINDOW })
 
   const state = curve.state
   const soldSupply = state?.soldSupply ?? null
@@ -237,6 +238,7 @@ export function OverviewPage() {
                 initialPrice={initialPriceSol}
                 slope={slopeSol}
                 trades={trades}
+                historyWindow={ACTIVITY_WINDOW}
               />
             </Suspense>
 

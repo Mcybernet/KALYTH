@@ -49,6 +49,8 @@ type BondingCurveChartProps = {
   previewMode?: 'buy' | 'sell'
   /** Real execution prices, plotted as markers on top of the chart. */
   trades?: ChartTrade[]
+  /** Number of newest activity records the candles are built from. */
+  historyWindow?: number | null
 }
 
 type ChartRange = {
@@ -131,6 +133,7 @@ export function BondingCurveChart({
   previewAmount = null,
   previewMode = 'buy',
   trades = [],
+  historyWindow = null,
 }: BondingCurveChartProps) {
   const [mode, setMode] = useState<ChartMode>('curve')
   const [rangeId, setRangeId] = useState<RangeId>('live')
@@ -280,6 +283,11 @@ export function BondingCurveChart({
     () => buildTimeCandles(trades, timeframe.seconds),
     [trades, timeframe.seconds],
   )
+
+  const historyNote =
+    historyWindow !== null && historyWindow > 0
+      ? ` History is limited to the latest ${historyWindow} activity records; older candles are not loaded.`
+      : ''
 
   const series = useMemo(
     () => [
@@ -537,8 +545,8 @@ export function BondingCurveChart({
                         candleSet.skipped === 1 ? '' : 's'
                       } without a block time excluded.`
                     : ''
-                }`
-              : 'No confirmed buy/sell trades yet. Candles appear after the first on-chain trade.'}
+                }${historyNote}`
+              : `No confirmed buy/sell trades yet. Candles appear after the first on-chain trade.${historyNote}`}
         </p>
         <p className="curve-chart__position">
           <span className="curve-chart__position-dot" aria-hidden="true" />
