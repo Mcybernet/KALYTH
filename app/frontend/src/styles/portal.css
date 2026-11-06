@@ -886,6 +886,10 @@
   box-shadow: inset 0 0 0 1px rgba(var(--color-primary-rgb), 0.42);
 }
 
+.curve-chart__ranges--tf .curve-chart__range {
+  text-transform: none;
+}
+
 .curve-chart__canvas {
   padding: 6px 4px 0;
   border: 1px solid rgba(42, 38, 32, 0.65);
@@ -981,6 +985,106 @@
 .curve-chart .apexcharts-yaxistooltip {
   border: 1px solid var(--color-border);
   background: var(--color-surface);
+  color: var(--color-text);
+}
+
+/* ------------------------------------------------------- Candle chart -- */
+.candle-chart {
+  display: flex;
+  flex-direction: column;
+}
+
+.candle-chart__legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 4px 8px 10px;
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+}
+
+.candle-chart__pair {
+  color: var(--color-text);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+}
+
+.candle-chart__tf {
+  padding: 1px 6px;
+  border: 1px solid rgba(var(--color-primary-rgb), 0.35);
+  color: var(--color-text);
+}
+
+.candle-chart__ohlc {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.candle-chart__ohlc b {
+  color: var(--color-text);
+  font-weight: var(--weight-semibold);
+}
+
+.candle-chart__change--up {
+  color: #26a69a;
+}
+
+.candle-chart__change--down {
+  color: #ef5350;
+}
+
+.candle-chart__reset {
+  margin-left: auto;
+}
+
+.candle-chart__stage {
+  position: relative;
+  width: 100%;
+}
+
+.candle-chart__empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--color-text-secondary);
+  font-size: var(--text-2xs);
+  text-align: center;
+  pointer-events: none;
+}
+
+.candle-chart__tooltip {
+  position: absolute;
+  z-index: 2;
+  min-width: 148px;
+  padding: 7px 9px;
+  border: 1px solid rgba(60, 54, 44, 0.9);
+  background: rgba(10, 10, 12, 0.96);
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  pointer-events: none;
+}
+
+.candle-chart__tooltip-time {
+  margin-bottom: 5px;
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+.candle-chart__tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.candle-chart__tooltip-row span:last-child {
   color: var(--color-text);
 }
 

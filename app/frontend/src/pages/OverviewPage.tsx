@@ -43,7 +43,7 @@ export function OverviewPage() {
   const { navigate } = useNavigation()
   const { loading: dataLoading, error: dataError, mint, burnStats } = useKlythData()
   const curve = useCurveState()
-  const activity = useActivity({ pageSize: 12 })
+  const activity = useActivity({ pageSize: 40 })
 
   const state = curve.state
   const soldSupply = state?.soldSupply ?? null

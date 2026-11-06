@@ -125,7 +125,7 @@ export function TradePage() {
   const { setVisible: setWalletModalVisible } = useWalletModal()
   const curve = useCurveState()
   const balances = useWalletBalances()
-  const activity = useActivity({ pageSize: 12 })
+  const activity = useActivity({ pageSize: 40 })
 
   const [mode, setMode] = useState<TradeMode>('buy')
   const [buyInput, setBuyInput] = useState('')

@@ -2,6 +2,13 @@
 import ReactApexChart from 'react-apexcharts'
 import type { ApexOptions } from 'apexcharts'
 import { CandlestickChart, LineChart } from 'lucide-react'
+import { CandleChart } from './CandleChart'
+import {
+  TIMEFRAMES,
+  buildTimeCandles,
+  formatChartPrice as formatPrice,
+  type TimeframeId,
+} from '../lib/candles'
 
 const DEFAULT_INITIAL_PRICE = 0.000001
 const DEFAULT_SLOPE = 0.00000000000008
@@ -51,19 +58,6 @@ type ChartRange = {
   end: number
 }
 
-type CandlePoint = {
-  /** Unique category key; the visible label comes from `labels`. */
-  x: string
-  y: [number, number, number, number]
-}
-
-type CandleBuild = {
-  points: CandlePoint[]
-  labels: string[]
-  timeMode: boolean
-  tradeCount: number
-}
-
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
@@ -105,19 +99,6 @@ function formatSupplyTick(value: number, span: number): string {
   return value.toLocaleString('en-US', { maximumFractionDigits: 0 })
 }
 
-function formatPrice(value: number): string {
-  if (!Number.isFinite(value)) {
-    return '—'
-  }
-  if (value === 0) {
-    return '0'
-  }
-  if (Math.abs(value) >= 0.001) {
-    return value.toFixed(6)
-  }
-  return value.toFixed(12).replace(/0+$/, '').replace(/\.$/, '')
-}
-
 /** Pick just enough decimal places so neighbouring ticks stay distinguishable. */
 function axisDecimals(min: number, max: number): number {
   const span = Math.abs(max - min)
@@ -125,103 +106,6 @@ function axisDecimals(min: number, max: number): number {
     return 9
   }
   return Math.min(9, Math.max(6, Math.ceil(-Math.log10(span)) + 2))
-}
-
-function formatCandleLabel(timeSeconds: number, spanSeconds: number): string {
-  const date = new Date(timeSeconds * 1000)
-  if (spanSeconds >= 172_800) {
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  }
-  if (spanSeconds >= 86_400) {
-    return `${date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-    })} ${date.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    })}`
-  }
-  if (spanSeconds < 1_800) {
-    return date.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-    })
-  }
-  return date.toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
-}
-
-/**
- * Builds candlesticks from confirmed buy/sell executions only.
- *
- * Trades are kept in execution order and split into `target` contiguous groups,
- * so the chart always has a natural number of evenly spaced candles instead of a
- * handful of oversized bars. Within a group, open/close are the first and last
- * real execution prices and high/low are the real extremes. No synthetic bars
- * are invented for periods without trades.
- */
-function buildCandles(trades: ChartTrade[], target: number): CandleBuild {
-  const usable = trades.filter(
-    (trade) =>
-      Number.isFinite(trade.supply) &&
-      Number.isFinite(trade.price) &&
-      trade.price > 0,
-  )
-
-  if (usable.length === 0) {
-    return { points: [], labels: [], timeMode: false, tradeCount: 0 }
-  }
-
-  const timeMode = usable.every(
-    (trade) =>
-      typeof trade.blockTime === 'number' &&
-      Number.isFinite(trade.blockTime) &&
-      trade.blockTime > 0,
-  )
-
-  const firstTime = timeMode ? (usable[0].blockTime as number) : 0
-  const lastTime = timeMode ? (usable[usable.length - 1].blockTime as number) : 0
-  const spanSeconds = Math.max(lastTime - firstTime, 1)
-
-  const count = Math.min(target, usable.length)
-  const base = Math.floor(usable.length / count)
-  const extra = usable.length % count
-
-  const points: CandlePoint[] = []
-  const labels: string[] = []
-  let cursor = 0
-
-  for (let index = 0; index < count; index += 1) {
-    const size = base + (index < extra ? 1 : 0)
-    const group = usable.slice(cursor, cursor + size)
-    cursor += size
-
-    let high = group[0].price
-    let low = group[0].price
-    for (const trade of group) {
-      high = Math.max(high, trade.price)
-      low = Math.min(low, trade.price)
-    }
-
-    points.push({
-      x: String(index),
-      y: [group[0].price, high, low, group[group.length - 1].price],
-    })
-
-    if (timeMode) {
-      labels.push(formatCandleLabel(group[group.length - 1].blockTime as number, spanSeconds))
-    } else {
-      labels.push(`#${index + 1}`)
-    }
-  }
-
-  return { points, labels, timeMode, tradeCount: usable.length }
 }
 
 function useIsCompact(): boolean {
@@ -250,7 +134,10 @@ export function BondingCurveChart({
 }: BondingCurveChartProps) {
   const [mode, setMode] = useState<ChartMode>('curve')
   const [rangeId, setRangeId] = useState<RangeId>('live')
+  const [timeframeId, setTimeframeId] = useState<TimeframeId>('1D')
   const compact = useIsCompact()
+
+  const timeframe = TIMEFRAMES.find((item) => item.id === timeframeId) ?? TIMEFRAMES[3]
 
   const initial = initialPrice ?? DEFAULT_INITIAL_PRICE
   const gradient = slope ?? DEFAULT_SLOPE
@@ -389,50 +276,28 @@ export function BondingCurveChart({
     [liveInDomain, position, initial, gradient],
   )
 
-  const candles = useMemo(
-    () => buildCandles(trades, compact ? 18 : 34),
-    [trades, compact],
+  const candleSet = useMemo(
+    () => buildTimeCandles(trades, timeframe.seconds),
+    [trades, timeframe.seconds],
   )
 
-  const candleBounds = useMemo(() => {
-    const values = candles.points.flatMap((candle) => candle.y)
-    if (livePrice !== null) {
-      values.push(livePrice)
-    }
-    if (values.length === 0) {
-      return { min: undefined, max: undefined, decimals: 9 }
-    }
-    const min = Math.min(...values)
-    const max = Math.max(...values)
-    const pad = Math.max((max - min) * 0.16, max * 0.02, 1e-9)
-    const paddedMin = Math.max(0, min - pad)
-    const paddedMax = max + pad
-    return {
-      min: paddedMin,
-      max: paddedMax,
-      decimals: axisDecimals(paddedMin, paddedMax),
-    }
-  }, [candles.points, livePrice])
-
-  const series = useMemo(() => {
-    if (mode === 'curve') {
-      return [
-        { name: 'Bonding curve', type: 'area' as const, data: curvePoints },
-        { name: 'Executions', type: 'scatter' as const, data: executionMarkers },
-        { name: 'Live price', type: 'scatter' as const, data: positionMarker },
-      ]
-    }
-    return [{ name: 'Confirmed trades', type: 'candlestick' as const, data: candles.points }]
-  }, [mode, curvePoints, executionMarkers, positionMarker, candles.points])
+  const series = useMemo(
+    () => [
+      { name: 'Bonding curve', type: 'area' as const, data: curvePoints },
+      { name: 'Executions', type: 'scatter' as const, data: executionMarkers },
+      { name: 'Live price', type: 'scatter' as const, data: positionMarker },
+    ],
+    [curvePoints, executionMarkers, positionMarker],
+  )
 
   const options = useMemo<ApexOptions>(() => {
     const tooltipPrice = (value: number) =>
       Number.isFinite(value) ? `${formatPrice(value)} SOL` : String(value)
 
-    const shared: ApexOptions = {
+    return {
       chart: {
         id: 'klyth-bonding-curve',
-        type: mode === 'curve' ? 'area' : 'candlestick',
+        type: 'area',
         background: 'transparent',
         toolbar: { show: false },
         zoom: { enabled: false },
@@ -444,16 +309,33 @@ export function BondingCurveChart({
       theme: { mode: 'dark' },
       dataLabels: { enabled: false },
       legend: { show: false },
+      colors: [PRICE_COLOR, UP_COLOR, POSITION_COLOR],
+      stroke: { curve: 'straight', width: [2, 0, 0] },
+      fill: {
+        type: ['gradient', 'solid', 'solid'],
+        gradient: {
+          shadeIntensity: 1,
+          opacityFrom: 0.22,
+          opacityTo: 0.01,
+          stops: [0, 92, 100],
+        },
+      },
+      markers: {
+        size: [0, 3, 6],
+        strokeWidth: [0, 0, 2],
+        strokeColors: ['transparent', 'transparent', SURFACE_COLOR],
+        hover: { size: 6 },
+      },
       grid: {
         borderColor: GRID_COLOR,
         strokeDashArray: 3,
         padding: { left: 8, right: 12, top: 8, bottom: 0 },
       },
       xaxis: {
-        type: mode === 'curve' ? 'numeric' : 'category',
-        min: mode === 'curve' ? domain.start : undefined,
-        max: mode === 'curve' ? domain.end : undefined,
-        tickAmount: mode === 'curve' ? (compact ? 4 : 5) : compact ? 3 : 5,
+        type: 'numeric',
+        min: domain.start,
+        max: domain.end,
+        tickAmount: compact ? 4 : 5,
         crosshairs: {
           show: true,
           width: 1,
@@ -464,28 +346,23 @@ export function BondingCurveChart({
           rotate: 0,
           hideOverlappingLabels: true,
           style: { colors: AXIS_COLOR, fontSize: compact ? '9px' : '10px' },
-          formatter:
-            mode === 'curve'
-              ? (value: string) => formatSupplyTick(Number(value), domainSpan)
-              : (value: string) => candles.labels[Number(value)] ?? '',
+          formatter: (value: string) => formatSupplyTick(Number(value), domainSpan),
         },
         axisBorder: { show: false },
         axisTicks: { show: false },
         title: {
-          text: mode === 'curve' ? 'KLYTH SOLD' : candles.timeMode ? 'TRADE TIME' : 'TRADE SEQUENCE',
+          text: 'KLYTH SOLD',
           style: { color: AXIS_COLOR, fontSize: '9px', fontWeight: 600 },
         },
       },
       yaxis: {
-        min: mode === 'curve' ? yMin : candleBounds.min,
-        max: mode === 'curve' ? yMax : candleBounds.max,
+        min: yMin,
+        max: yMax,
         tickAmount: compact ? 4 : 5,
         labels: {
           style: { colors: AXIS_COLOR, fontSize: compact ? '9px' : '10px' },
           formatter: (value: number) =>
-            Number.isFinite(value)
-              ? value.toFixed(mode === 'curve' ? tickDecimals : candleBounds.decimals)
-              : '',
+            Number.isFinite(value) ? value.toFixed(tickDecimals) : '',
         },
         title: {
           text: 'PRICE · SOL',
@@ -498,9 +375,7 @@ export function BondingCurveChart({
         intersect: false,
         x: {
           formatter: (value: number | string) =>
-            mode === 'curve'
-              ? `${formatSupply(Number(value))} KLYTH sold`
-              : candles.labels[Number(value)] ?? String(value),
+            `${formatSupply(Number(value))} KLYTH sold`,
         },
         y: {
           formatter: (value: number) => tooltipPrice(value),
@@ -508,7 +383,7 @@ export function BondingCurveChart({
       },
       annotations: {
         xaxis:
-          mode === 'curve' && preview !== null
+          preview !== null
             ? [
                 {
                   x: preview.start,
@@ -532,7 +407,7 @@ export function BondingCurveChart({
               ]
             : undefined,
         yaxis:
-          livePrice !== null && (mode === 'candles' || liveInDomain)
+          livePrice !== null && liveInDomain
             ? [
                 {
                   y: livePrice,
@@ -543,61 +418,11 @@ export function BondingCurveChart({
             : undefined,
       },
       noData: {
-        text:
-          mode === 'curve'
-            ? 'Waiting for on-chain state…'
-            : 'No confirmed buy/sell trades yet.',
+        text: 'Waiting for on-chain state…',
         style: { color: AXIS_COLOR, fontSize: '13px' },
       },
     }
-
-    if (mode === 'curve') {
-      return {
-        ...shared,
-        colors: [PRICE_COLOR, UP_COLOR, POSITION_COLOR],
-        stroke: { curve: 'straight', width: [2, 0, 0] },
-        fill: {
-          type: ['gradient', 'solid', 'solid'],
-          gradient: {
-            shadeIntensity: 1,
-            opacityFrom: 0.22,
-            opacityTo: 0.01,
-            stops: [0, 92, 100],
-          },
-        },
-        markers: {
-          size: [0, 3, 6],
-          strokeWidth: [0, 0, 2],
-          strokeColors: ['transparent', 'transparent', SURFACE_COLOR],
-          hover: { size: 6 },
-        },
-      }
-    }
-
-    return {
-      ...shared,
-      colors: [UP_COLOR],
-      plotOptions: {
-        bar: {
-          // Fixed pixel width keeps every candle thin no matter how few trades exist.
-          columnWidth: compact ? 4 : 5,
-        },
-        candlestick: {
-          colors: {
-            upward: UP_COLOR,
-            downward: DOWN_COLOR,
-          },
-          wick: {
-            useFillColor: true,
-          },
-        },
-      },
-      stroke: { width: 1 },
-      fill: { type: 'solid' },
-      markers: { size: 0 },
-    }
   }, [
-    mode,
     compact,
     domain.start,
     domain.end,
@@ -605,9 +430,6 @@ export function BondingCurveChart({
     yMin,
     yMax,
     tickDecimals,
-    candleBounds,
-    candles.labels,
-    candles.timeMode,
     preview,
     previewMode,
     livePrice,
@@ -657,18 +479,43 @@ export function BondingCurveChart({
             ))}
           </div>
         ) : (
-          <span className="badge badge--neutral">Confirmed trades only</span>
+          <div
+            className="curve-chart__ranges curve-chart__ranges--tf"
+            role="group"
+            aria-label="Candle timeframe"
+          >
+            {TIMEFRAMES.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={`curve-chart__range ${
+                  item.id === timeframeId ? 'curve-chart__range--active' : ''
+                }`}
+                aria-pressed={item.id === timeframeId}
+                onClick={() => setTimeframeId(item.id)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
         )}
       </div>
 
       <div className="curve-chart__canvas" data-chart-mode={mode}>
-        <ReactApexChart
-          key={mode}
-          type={mode === 'curve' ? 'area' : 'candlestick'}
-          height={chartHeight}
-          series={series}
-          options={options}
-        />
+        {mode === 'curve' ? (
+          <ReactApexChart
+            type="area"
+            height={chartHeight}
+            series={series}
+            options={options}
+          />
+        ) : (
+          <CandleChart
+            candles={candleSet.candles}
+            timeframe={timeframe}
+            height={chartHeight}
+          />
+        )}
       </div>
 
       <div className="curve-chart__footer">
@@ -683,8 +530,14 @@ export function BondingCurveChart({
                   ? ' Dots are confirmed buy and sell executions.'
                   : ' No confirmed executions in this range yet.'
               }`
-            : candles.points.length > 0
-              ? `${candles.points.length} candles from ${candles.tradeCount} confirmed trades. Each candle groups consecutive executions; open/close are the first and last prices, high/low are the extremes.`
+            : candleSet.candles.length > 0
+              ? `${candleSet.candles.length} ${timeframe.label} candles (UTC) from ${candleSet.tradeCount} confirmed trades. Open/close are the first and last real executions in each interval; high/low are the extremes.${
+                  candleSet.skipped > 0
+                    ? ` ${candleSet.skipped} trade${
+                        candleSet.skipped === 1 ? '' : 's'
+                      } without a block time excluded.`
+                    : ''
+                }`
               : 'No confirmed buy/sell trades yet. Candles appear after the first on-chain trade.'}
         </p>
         <p className="curve-chart__position">

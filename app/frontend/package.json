@@ -17,6 +17,7 @@
     "@solana/wallet-adapter-react-ui": "^0.9.40",
     "@solana/web3.js": "^1.99.0",
     "apexcharts": "^8.7.0",
+    "lightweight-charts": "^5.2.1",
     "lucide-react": "^0.468.0",
     "react": "^19.1.0",
     "react-apexcharts": "^2.2.0",
