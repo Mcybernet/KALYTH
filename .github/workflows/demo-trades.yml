@@ -2,9 +2,10 @@ name: Devnet demo trades
 
 # Small randomized buy/sell activity for the Devnet test deployment.
 #
-# This workflow is opt-in: it only runs when the repository variable
-# DEMO_TRADING_ENABLED is set to `true`. Remove or set it to `false` to stop
-# the bot immediately (the kill switch).
+# This workflow is opt-in for the schedule: it only runs automatically when the
+# repository variable DEMO_TRADING_ENABLED is set to `true`. Set it to `false`
+# to stop the bot. Manual "Run workflow" dispatches always run so a test can be
+# started even while the schedule is paused.
 #
 # Required secrets:
 #   DEVNET_RPC_URL       Devnet RPC endpoint (use a dedicated provider if the
@@ -38,7 +39,7 @@ concurrency:
 
 jobs:
   trade:
-    if: vars.DEMO_TRADING_ENABLED == 'true'
+    if: vars.DEMO_TRADING_ENABLED == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -57,6 +58,12 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Show configuration
+        run: |
+          echo "event: ${{ github.event_name }}"
+          echo "DEMO_TRADING_ENABLED=[${{ vars.DEMO_TRADING_ENABLED }}]"
+          echo "DEMO_WALLET_ADDRESS=[${{ vars.DEMO_WALLET_ADDRESS }}]"
 
       - name: Run demo trader
         run: node demo-trade.mjs
