@@ -94,11 +94,12 @@ Add repository secrets:
 Both secrets are already configured on `Mcybernet/KALYTH`. The crank is a
 dedicated wallet (`7B2P…P4sr`) holding 0.2 SOL, not the treasury key.
 
-The workflow runs at `00:05`, `06:05`, `12:05`, and `18:05` UTC. Extra runs are
-no-ops because of the on-chain 23h50m window. Scheduled workflows only run from
-the default branch, and GitHub disables the schedule after 60 days without
-repository activity, so check the Actions tab periodically or keep the repo
-active for the full 50-day burn plan.
+The workflow runs at `00:05`, `06:05`, `12:05`, and `18:05` WIB. GitHub cron
+only accepts UTC, so the workflow file schedules `17:05`, `23:05`, `05:05`, and
+`11:05` UTC respectively. Extra runs are no-ops because of the on-chain 23h50m
+window. Scheduled workflows only run from the default branch, and GitHub
+disables the schedule after 60 days without repository activity, so check the
+Actions tab periodically or keep the repo active for the full 50-day burn plan.
 
 Never put a keypair in the repository. `BURN_CRANK_KEYPAIR` should hold only
 enough Devnet SOL for transaction fees.
@@ -178,9 +179,10 @@ Then add a repository **variable**:
 | --- | --- |
 | `DEMO_TRADING_ENABLED` | `true` to run, `false` or absent to stop |
 
-This variable is the kill switch: the `demo-trades` job is skipped entirely
-unless it is `true`. The workflow runs every 15 minutes and can also be
-dispatched manually with a `dry_run` toggle and a `trades` count.
+This variable is the kill switch: scheduled `demo-trades` runs are skipped
+unless it is `true`; manual dispatches always run. The workflow runs every 15
+minutes (GitHub cron is UTC, but a 15-minute interval is identical in WIB) and
+can also be dispatched manually with a `dry_run` toggle and a `trades` count.
 
 Optionally add a second variable so the frontend marks the bot's trades:
 

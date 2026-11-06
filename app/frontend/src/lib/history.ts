@@ -531,11 +531,12 @@ export function formatBlockTime(blockTime: number | null): string {
     return 'Unknown'
   }
 
-  return new Date(blockTime * 1000).toLocaleString('en-US', {
+  return `${new Date(blockTime * 1000).toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-  })
+    timeZone: 'Asia/Jakarta',
+  })} WIB`
 }

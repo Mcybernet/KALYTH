@@ -388,7 +388,7 @@ impl BurnState {
 /// Minimum spacing between successful burns. The instruction is permissionless,
 /// so this window is what makes the schedule "daily" rather than caller-driven.
 /// 23h50m leaves a small grace for scheduler jitter while the cron still runs
-/// once per UTC day.
+/// once per day.
 pub const BURN_INTERVAL_SECONDS: i64 = 23 * 60 * 60 + 50 * 60;
 
 #[event]

@@ -18,13 +18,20 @@ export const TIMEFRAMES: readonly Timeframe[] = [
 
 const WEEK_OFFSET = 3 * 86_400
 
+/**
+ * WIB is UTC+7 all year (Indonesia has no daylight saving). Candle timestamps
+ * are shifted into WIB wall-clock time because lightweight-charts renders
+ * UTCTimestamp values in UTC; shifting makes the axis read as local time.
+ */
+const WIB_OFFSET_SECONDS = 7 * 60 * 60
+
 export type CandleTrade = {
   price: number
   blockTime?: number | null
 }
 
 export type TimeCandle = {
-  /** UTC bucket start, in seconds. */
+  /** WIB wall-clock bucket start, stored as UTC seconds for the chart. */
   time: number
   open: number
   high: number
@@ -87,11 +94,15 @@ export function planCandleUpdate(
 }
 
 export function bucketStart(seconds: number, interval: number): number {
-  // Anchor weekly candles to Monday 00:00 UTC.
+  // Shift the real UTC timestamp into WIB wall-clock time first, so daily and
+  // weekly candles are anchored to midnight in Jakarta, not midnight UTC.
+  const local = seconds + WIB_OFFSET_SECONDS
   if (interval === 604_800) {
-    return Math.floor((seconds + WEEK_OFFSET) / interval) * interval - WEEK_OFFSET
+    return (
+      Math.floor((local + WEEK_OFFSET) / interval) * interval - WEEK_OFFSET
+    )
   }
-  return Math.floor(seconds / interval) * interval
+  return Math.floor(local / interval) * interval
 }
 
 /**
@@ -176,7 +187,7 @@ export function formatChartPrice(value: number): string {
   return value.toFixed(12).replace(/0+$/, '').replace(/\.$/, '')
 }
 
-/** Candle timestamps are bucketed and displayed in UTC, like exchange charts. */
+/** Candle timestamps are stored as WIB wall-clock time in UTC seconds. */
 export function formatCandleTime(seconds: number, interval: number): string {
   const date = new Date(seconds * 1000)
   if (interval >= 604_800) {
@@ -194,7 +205,7 @@ export function formatCandleTime(seconds: number, interval: number): string {
     timeZone: 'UTC',
   })
   if (interval >= 86_400) {
-    return `${day} · 00:00 UTC`
+    return `${day} · 00:00 WIB`
   }
   const clock = date.toLocaleTimeString('en-GB', {
     hour: '2-digit',
@@ -202,5 +213,5 @@ export function formatCandleTime(seconds: number, interval: number): string {
     hour12: false,
     timeZone: 'UTC',
   })
-  return `${day} · ${clock} UTC`
+  return `${day} · ${clock} WIB`
 }

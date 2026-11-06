@@ -16,8 +16,10 @@ name: Devnet demo trades
 
 on:
   schedule:
-    # GitHub cron is best-effort and can be delayed. The script adds its own
-    # random delay between trades, so a fixed cadence still looks organic.
+    # GitHub cron is always UTC and best-effort. A 15-minute cadence is the
+    # same in WIB (UTC+7), so no timezone conversion is needed here. The script
+    # also adds its own random delay between trades so the activity looks
+    # organic.
     - cron: '*/15 * * * *'
   workflow_dispatch:
     inputs:

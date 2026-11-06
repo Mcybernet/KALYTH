@@ -292,9 +292,11 @@ node burn-daily.mjs
 For unattended operation, two keepers are configured:
 
 - **GitHub Actions:** `.github/workflows/burn-daily.yml` runs four times a day
-  at `00:05`, `06:05`, `12:05`, and `18:05` UTC. Repository secrets
-  `DEVNET_RPC_URL` and `BURN_CRANK_KEYPAIR` are already set on
-  `Mcybernet/KALYTH`. The crank wallet is dedicated and holds only fee SOL.
+  at `00:05`, `06:05`, `12:05`, and `18:05` WIB. GitHub cron only accepts UTC,
+  so the workflow file schedules `17:05`, `23:05`, `05:05`, and `11:05` UTC
+  respectively.
+  Repository secrets `DEVNET_RPC_URL` and `BURN_CRANK_KEYPAIR` are already set
+  on `Mcybernet/KALYTH`. The crank wallet is dedicated and holds only fee SOL.
 - **Windows Task Scheduler / cron:** the local task runs every 6 hours. The
   23h50m window makes extra runs no-ops.
 
