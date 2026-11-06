@@ -52,7 +52,7 @@ function fitView(chart: IChartApi, candles: TimeCandle[]) {
   }
 
   // Reserve empty bars on both sides so a couple of candles do not become slabs.
-  const span = Math.max(candles.length + 4, 30)
+  const span = Math.max(candles.length + 4, 50)
   const start = -Math.round((span - candles.length) / 2)
   chart.timeScale().setVisibleLogicalRange({ from: start, to: start + span - 1 })
   chart.priceScale('right').applyOptions({ autoScale: true })
