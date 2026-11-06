@@ -10,6 +10,7 @@ import {
   PROGRAM_ADDRESS,
   SOL_RESERVE_ADDRESS,
   STATE_ADDRESS,
+  isDemoWallet,
 } from './addresses'
 import { rpcRequest } from './rpc'
 
@@ -26,6 +27,8 @@ export type ActivityRecord = {
   solRaw: string | null
   sol: string | null
   status: 'confirmed' | 'failed'
+  /** True when the transaction came from the flagged Devnet demo wallet. */
+  demo: boolean
 }
 
 export type ActivityPage = {
@@ -272,6 +275,7 @@ function parseProgramRecord(
     solRaw: solRaw !== null ? solRaw.toString() : null,
     sol: solRaw !== null ? formatSol(solRaw, 9) : null,
     status: isSuccessful(transaction) ? 'confirmed' : 'failed',
+    demo: isDemoWallet(wallet),
   }
 }
 
@@ -317,6 +321,7 @@ function parseBurnRecord(
     solRaw: null,
     sol: null,
     status: isSuccessful(transaction) ? 'confirmed' : 'failed',
+    demo: isDemoWallet(wallet),
   }
 }
 

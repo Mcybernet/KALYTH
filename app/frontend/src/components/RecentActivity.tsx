@@ -97,6 +97,14 @@ export function RecentActivity({
               <span className="recent-activity__amount">{record.amount} KLYTH</span>
               <span className="recent-activity__wallet" title={record.wallet}>
                 {shortenAddress(record.wallet, 4, 4)}
+                {record.demo ? (
+                  <span
+                    className="badge badge--neutral demo-tag"
+                    title="Devnet demo wallet, not a real user"
+                  >
+                    Demo
+                  </span>
+                ) : null}
               </span>
               <span className="recent-activity__time">
                 {record.status === 'failed' ? (

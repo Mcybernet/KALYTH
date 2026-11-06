@@ -103,7 +103,109 @@ active for the full 50-day burn plan.
 Never put a keypair in the repository. `BURN_CRANK_KEYPAIR` should hold only
 enough Devnet SOL for transaction fees.
 
+## 5. Demo trader (Devnet only)
+
+`demo-trade.mjs` sends small randomized buys and sells from a dedicated wallet
+so the test deployment has visible activity. It is **not** a market maker and
+must never run on mainnet: the script refuses any cluster whose genesis hash is
+not Devnet's `EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG`.
+
+Safety rules baked into the script:
+
+- It only spends its own wallet balance. It never uses the curve reserve, the
+  burn reserve, or the treasury.
+- It refuses to start if `DEMO_TRADE_KEYPAIR` resolves to a known protocol or
+  treasury address, and it caps any single trade at 0.05 SOL.
+- Buys are capped by wallet SOL, 0.5% of the token vault, and remaining supply.
+- Sells are capped by 0.5% of the available reserve and 25% of the wallet's
+  KLYTH balance.
+- If a randomized buy is larger than the available SOL, it switches to a sell.
+  If there is no KLYTH to sell, it shrinks the buy instead.
+- If SOL is below the fee buffer, it exits cleanly and waits for a top-up.
+- It exits without doing anything when `DEMO_TRADING_ENABLED=0`.
+
+### Create and fund the demo wallet
+
+Use a brand-new keypair, separate from every other role:
+
+```bash
+solana-keygen new --outfile ~/demo-trade.json
+solana-keygen pubkey ~/demo-trade.json
+```
+
+Fund that address with Devnet SOL (`solana airdrop 1 <address> --url devnet`, or
+any Devnet faucet). A budget of `0.1–0.5 SOL` is enough for a long demo; a
+round-trip buy/sell returns most of the principal and only loses fees and
+rounding. Do **not** fund it with real SOL.
+
+### Run locally
+
+```bash
+cd scripts
+npm ci
+cp .env.example .env    # set DEMO_TRADE_KEYPAIR and DEVNET_RPC_URL
+DRY_RUN=1 node demo-trade.mjs
+node demo-trade.mjs
+```
+
+Optional tuning (defaults in parentheses):
+
+| Variable | Default | Meaning |
+| --- | ---: | --- |
+| `DEMO_TRADES_PER_RUN` | `1` | Trades per invocation, clamped to 1–5 |
+| `DEMO_MIN_TRADE_SOL` | `0.002` | Smallest buy budget |
+| `DEMO_MAX_TRADE_SOL` | `0.02` | Largest buy budget |
+| `DEMO_MIN_SOL_BUFFER` | `0.005` | SOL kept back for fees and rent |
+| `DEMO_MAX_VAULT_BPS` | `50` | Max buy size as basis points of the vault |
+| `DEMO_MAX_RESERVE_BPS` | `50` | Max sell payout as basis points of the reserve |
+| `DEMO_MAX_SELL_WALLET_BPS` | `2500` | Max share of wallet KLYTH sold at once |
+| `DEMO_SELL_PROBABILITY` | `0.45` | Chance of choosing a sell when both sides are possible |
+| `DEMO_SLIPPAGE_BPS` | `100` | Slippage tolerance (1%) |
+| `DEMO_MAX_DELAY_MS` | `30000` | Upper bound for the random delay between trades |
+
+### Enable the GitHub Actions workflow
+
+Add repository secrets:
+
+| Secret | Value |
+| --- | --- |
+| `DEVNET_RPC_URL` | Devnet RPC endpoint |
+| `DEMO_TRADE_KEYPAIR` | Demo wallet as a JSON array or base58 secret |
+
+Then add a repository **variable**:
+
+| Variable | Value |
+| --- | --- |
+| `DEMO_TRADING_ENABLED` | `true` to run, `false` or absent to stop |
+
+This variable is the kill switch: the `demo-trades` job is skipped entirely
+unless it is `true`. The workflow runs every 15 minutes and can also be
+dispatched manually with a `dry_run` toggle and a `trades` count.
+
+Optionally add a second variable so the frontend marks the bot's trades:
+
+| Variable | Value |
+| --- | --- |
+| `DEMO_WALLET_ADDRESS` | The demo wallet's public address |
+
+`deploy-pages.yml` passes it to Vite as `VITE_DEMO_WALLET_ADDRESS`, and the
+activity tables show a `Demo` badge for that wallet. Leave it unset to hide the
+badge. Changing the variable requires re-running the Pages workflow.
+
+Scheduled workflows only run from the default branch, GitHub disables schedules
+after 60 days without repository activity, and cron is best-effort. The public
+Devnet RPC is heavily rate-limited, so use a dedicated provider for frequent
+runs.
+
+### What "waiting" means
+
+When the log says `SOL is below the 0.005 SOL buffer` or `Wallet SOL exhausted;
+waiting for a top-up`, the bot has stopped by design. Send more Devnet SOL to
+the demo address; the next run picks it up automatically. It never tries to
+refill itself from the curve reserve.
+
 ## Dry run
+
 
 Set `DRY_RUN=1` to print the plan without sending:
 

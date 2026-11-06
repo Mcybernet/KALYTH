@@ -47,6 +47,8 @@ jobs:
           # `base_path` is `/repo-name` for project sites and empty for
           # user/org sites. vite.config.ts normalises the trailing slash.
           VITE_BASE: ${{ steps.pages.outputs.base_path }}
+          # Optional: marks demo-wallet trades in the activity tables.
+          VITE_DEMO_WALLET_ADDRESS: ${{ vars.DEMO_WALLET_ADDRESS }}
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

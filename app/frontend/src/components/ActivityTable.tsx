@@ -49,6 +49,14 @@ export function ActivityTable({ records, caption }: ActivityTableProps) {
               </td>
               <td className="data-table__mono" title={record.wallet}>
                 {shortenAddress(record.wallet, 4, 4)}
+                {record.demo ? (
+                  <span
+                    className="badge badge--neutral demo-tag"
+                    title="Devnet demo wallet, not a real user"
+                  >
+                    Demo
+                  </span>
+                ) : null}
               </td>
               <td className="data-table__num">{record.amount} KLYTH</td>
               <td className="data-table__num data-table__muted">

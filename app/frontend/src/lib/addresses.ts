@@ -20,6 +20,17 @@ export const BURN_RESERVE_TOKEN_ACCOUNT = getBurnReserveAddress().toBase58()
 
 const CLUSTER_QUERY = '?cluster=devnet'
 
+/**
+ * Devnet demo wallet. When set at build time, its trades are labelled in the
+ * activity tables so test activity is never mistaken for real users.
+ */
+export const DEMO_WALLET_ADDRESS =
+  (import.meta.env.VITE_DEMO_WALLET_ADDRESS as string | undefined)?.trim() || null
+
+export function isDemoWallet(wallet: string): boolean {
+  return DEMO_WALLET_ADDRESS !== null && wallet === DEMO_WALLET_ADDRESS
+}
+
 export function explorerTxUrl(signature: string): string {
   return `https://explorer.solana.com/tx/${signature}${CLUSTER_QUERY}`
 }

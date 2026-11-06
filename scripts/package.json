@@ -7,7 +7,8 @@
   "scripts": {
     "verify": "node verify-burn-setup.mjs",
     "migrate": "node migrate-burn.mjs",
-    "burn:daily": "node burn-daily.mjs"
+    "burn:daily": "node burn-daily.mjs",
+    "demo:trade": "node demo-trade.mjs"
   },
   "dependencies": {
     "@solana/spl-token": "^0.4.15",
