@@ -40,7 +40,7 @@ const DEFAULT_SLIPPAGE_BPS = 50n
 const FEE_BUFFER_LAMPORTS = 3_000_000n
 const TOKEN_SCALE = 10n ** BigInt(KLYTH_DECIMALS)
 const ACTIVITY_WINDOW = 40
-const ACTIVITY_POLL_MS = 25_000
+const ACTIVITY_POLL_MS = 20_000
 
 type TradeMode = 'buy' | 'sell'
 
@@ -129,11 +129,13 @@ export function TradePage() {
   const { setVisible: setWalletModalVisible } = useWalletModal()
   const curve = useCurveState()
   const balances = useWalletBalances()
+  const ohlc = useOhlcSnapshot()
   const activity = useActivity({
     pageSize: ACTIVITY_WINDOW,
     pollIntervalMs: ACTIVITY_POLL_MS,
+    seed: ohlc.records,
+    enabled: !ohlc.loading,
   })
-  const ohlc = useOhlcSnapshot()
 
   const [mode, setMode] = useState<TradeMode>('buy')
   const [buyInput, setBuyInput] = useState('')
@@ -342,6 +344,9 @@ export function TradePage() {
         setSellInput('')
         curve.refresh()
         balances.refresh()
+        // Show the just-confirmed trade on the candles right away instead of
+        // waiting for the next poll.
+        activity.refresh()
       } catch (error) {
         setStatus('failed')
         setStatusMessage(describeError(error))
@@ -349,7 +354,7 @@ export function TradePage() {
         setSubmitting(false)
       }
     },
-    [publicKey, signTransaction, connection, curve, balances],
+    [publicKey, signTransaction, connection, curve, balances, activity.refresh],
   )
 
   const openBuyConfirmation = () => {

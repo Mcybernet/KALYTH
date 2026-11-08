@@ -27,8 +27,12 @@ export type OhlcSnapshot = {
   trades: OhlcTrade[]
 }
 
-/** Cache for five minutes; the Pages deploy refreshes the file every 15. */
-const CACHE_BUCKET_MS = 5 * 60 * 1_000
+/**
+ * The file is tiny and the Pages deploy refreshes it every 15 minutes. A
+ * one-minute bucket (plus the hook's minute refresh) picks up a new deploy
+ * quickly without re-downloading on every poll.
+ */
+const CACHE_BUCKET_MS = 60 * 1_000
 
 export function snapshotUrl(): string {
   const base = import.meta.env.BASE_URL.endsWith('/')

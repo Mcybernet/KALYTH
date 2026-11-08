@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   fetchOhlcSnapshot,
   snapshotToActivity,
@@ -6,7 +6,12 @@ import {
 } from '../lib/ohlc'
 import type { ActivityRecord } from '../lib/history'
 
-const REFRESH_MS = 5 * 60 * 1_000
+/**
+ * The snapshot is redeployed every 15 minutes, but re-reading the (small) file
+ * once a minute means a fresh deploy is picked up almost immediately. Live
+ * activity is merged on top, so this only feeds the deep history.
+ */
+const REFRESH_MS = 60 * 1_000
 
 export type OhlcSnapshotState = {
   records: ActivityRecord[]
@@ -26,11 +31,15 @@ export function useOhlcSnapshot(): OhlcSnapshotState {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
+  const loadedOnceRef = useRef(false)
 
   useEffect(() => {
     const controller = new AbortController()
     let cancelled = false
-    setLoading(true)
+    // Only the first load shows a spinner; later refreshes stay silent.
+    if (!loadedOnceRef.current) {
+      setLoading(true)
+    }
 
     fetchOhlcSnapshot(controller.signal)
       .then((value) => {
@@ -40,6 +49,7 @@ export function useOhlcSnapshot(): OhlcSnapshotState {
         setSnapshot(value)
         setRecords(value ? snapshotToActivity(value) : [])
         setError(null)
+        loadedOnceRef.current = true
       })
       .catch((cause: unknown) => {
         if (cancelled) {
@@ -48,11 +58,14 @@ export function useOhlcSnapshot(): OhlcSnapshotState {
         if (cause instanceof DOMException && cause.name === 'AbortError') {
           return
         }
-        // A missing snapshot is expected on a fresh checkout; the chart falls
+        // A transient refresh failure keeps the rows already on the chart. A
+        // missing snapshot is expected on a fresh checkout; the chart falls
         // back to the live activity window, so this stays non-fatal.
-        setError(
-          cause instanceof Error ? cause.message : 'Failed to load OHLC snapshot',
-        )
+        if (!loadedOnceRef.current) {
+          setError(
+            cause instanceof Error ? cause.message : 'Failed to load OHLC snapshot',
+          )
+        }
       })
       .finally(() => {
         if (!cancelled) {

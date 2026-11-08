@@ -41,13 +41,19 @@ const BondingCurveChart = lazy(() =>
 
 const TOKEN_SCALE = 1_000_000
 const ACTIVITY_WINDOW = 40
+const ACTIVITY_POLL_MS = 20_000
 
 export function OverviewPage() {
   const { navigate } = useNavigation()
   const { loading: dataLoading, error: dataError, mint, burnStats } = useKlythData()
   const curve = useCurveState()
-  const activity = useActivity({ pageSize: ACTIVITY_WINDOW })
   const ohlc = useOhlcSnapshot()
+  const activity = useActivity({
+    pageSize: ACTIVITY_WINDOW,
+    pollIntervalMs: ACTIVITY_POLL_MS,
+    seed: ohlc.records,
+    enabled: !ohlc.loading,
+  })
 
   const state = curve.state
   const soldSupply = state?.soldSupply ?? null

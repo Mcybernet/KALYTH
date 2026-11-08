@@ -105,8 +105,16 @@ const BURN_MAX_PAGES = 10
 const BURN_STATS_TTL = 60_000
 const ACTIVITY_TTL = 20_000
 
+/**
+ * A confirmed transaction never changes, so decoded rows are kept by signature.
+ * Polls then only pay for signatures they have not seen yet, which keeps the
+ * candle feed fresh without hammering the public Devnet rate limit.
+ */
+const TRANSACTION_CACHE_LIMIT = 600
+
 let burnStatsCache: { expiresAt: number; value: BurnStats } | null = null
-const activityCache = new Map<number, { expiresAt: number; value: ActivityPage }>()
+const activityCache = new Map<string, { expiresAt: number; value: ActivityPage }>()
+const transactionCache = new Map<string, ParsedTransaction>()
 
 function decodeBase58(value: string): Uint8Array {
   const bytes: number[] = [0]
@@ -150,7 +158,12 @@ async function getSignatures(
   signal?: AbortSignal,
   before?: string,
 ): Promise<SignatureEntry[]> {
-  const config: { limit: number; before?: string } = { limit }
+  // `confirmed` (not the finalized default) so a trade appears in the candle
+  // feed within a poll or two instead of after finalization (~13s + poll).
+  const config: { limit: number; before?: string; commitment: 'confirmed' } = {
+    limit,
+    commitment: 'confirmed',
+  }
   if (before) {
     config.before = before
   }
@@ -166,7 +179,15 @@ async function getTransaction(
   signature: string,
   signal?: AbortSignal,
 ): Promise<ParsedTransaction | null> {
-  return rpcRequest<ParsedTransaction | null>(
+  const cached = transactionCache.get(signature)
+  if (cached) {
+    // Re-insert so the newest-used entries survive eviction.
+    transactionCache.delete(signature)
+    transactionCache.set(signature, cached)
+    return cached
+  }
+
+  const transaction = await rpcRequest<ParsedTransaction | null>(
     'getTransaction',
     [
       signature,
@@ -178,6 +199,19 @@ async function getTransaction(
     ],
     signal,
   )
+
+  // Never cache a miss: a transaction that is not visible yet can still land.
+  if (transaction) {
+    transactionCache.set(signature, transaction)
+    if (transactionCache.size > TRANSACTION_CACHE_LIMIT) {
+      const oldest = transactionCache.keys().next().value
+      if (oldest !== undefined) {
+        transactionCache.delete(oldest)
+      }
+    }
+  }
+
+  return transaction
 }
 
 async function mapWithConcurrency<T, R>(
@@ -331,13 +365,20 @@ function parseBurnRecord(
  * Program transactions come from the bonding curve program; burns come from the
  * burn reserve token account. `limit` is the number of decoded records to return,
  * so the caller may request more than the raw signature page size.
+ *
+ * `seed` supplies records the caller already has (the OHLC snapshot). Those
+ * signatures are not fetched again, which makes the first paint fast and turns
+ * each poll into "fetch only what happened since the snapshot". Work stops as
+ * soon as `limit` newest records are known, so old history is never requested.
  */
 export async function fetchActivity(
   limit: number,
   signal?: AbortSignal,
   force = false,
+  seed?: ReadonlyArray<ActivityRecord>,
 ): Promise<ActivityPage> {
-  const cached = activityCache.get(limit)
+  const cacheKey = `${limit}:${seed?.length ?? 0}`
+  const cached = activityCache.get(cacheKey)
   if (!force && cached && cached.expiresAt > Date.now()) {
     return cached.value
   }
@@ -368,26 +409,58 @@ export async function fetchActivity(
 
   candidates.sort((left, right) => right.entry.slot - left.entry.slot)
 
-  const transactions = await mapWithConcurrency(candidates, 3, ({ entry }) =>
-    getTransaction(entry.signature, signal),
-  )
+  const seeded = new Map<string, ActivityRecord>()
+  if (seed) {
+    for (const record of seed) {
+      seeded.set(record.signature, record)
+    }
+  }
 
   const records: ActivityRecord[] = []
-  candidates.forEach(({ entry, source }, index) => {
-    const transaction = transactions[index]
-    if (!transaction) {
-      return
-    }
+  let cursor = 0
+  let reachedSeed = false
 
-    const record =
-      source === 'burn'
-        ? parseBurnRecord(entry, transaction)
-        : parseProgramRecord(entry, transaction)
+  // Walk newest-first. Everything newer than the first seeded signature must be
+  // fetched, otherwise the merge with the snapshot would leave a gap. Once the
+  // seed boundary is reached, remaining rows are free to copy and the walk can
+  // stop as soon as `limit` rows are known. Racing workers may push a few extra
+  // rows; the sort and slice below trim them.
+  const runners = Array.from(
+    { length: Math.min(3, candidates.length) },
+    async () => {
+      while (!reachedSeed || records.length < limit) {
+        const index = cursor
+        cursor += 1
+        if (index >= candidates.length) {
+          return
+        }
 
-    if (record) {
-      records.push(record)
-    }
-  })
+        const { entry, source } = candidates[index]
+        const known = seeded.get(entry.signature)
+        if (known) {
+          reachedSeed = true
+          records.push(known)
+          continue
+        }
+
+        const transaction = await getTransaction(entry.signature, signal)
+        if (!transaction) {
+          continue
+        }
+
+        const record =
+          source === 'burn'
+            ? parseBurnRecord(entry, transaction)
+            : parseProgramRecord(entry, transaction)
+
+        if (record) {
+          records.push(record)
+        }
+      }
+    },
+  )
+
+  await Promise.all(runners)
 
   records.sort((left, right) => right.slot - left.slot)
 
@@ -398,7 +471,7 @@ export async function fetchActivity(
       burnSignatures.length === burnLimit,
   }
 
-  activityCache.set(limit, { expiresAt: Date.now() + ACTIVITY_TTL, value })
+  activityCache.set(cacheKey, { expiresAt: Date.now() + ACTIVITY_TTL, value })
   return value
 }
 

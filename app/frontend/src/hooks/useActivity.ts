@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   fetchActivity,
   type ActivityRecord,
@@ -9,6 +9,16 @@ type UseActivityOptions = {
   initialSize?: number
   /** Background refresh interval in milliseconds. Zero disables polling. */
   pollIntervalMs?: number
+  /**
+   * Records already loaded elsewhere (the OHLC snapshot). Their signatures are
+   * not fetched again, so only activity newer than the snapshot hits the RPC.
+   */
+  seed?: ReadonlyArray<ActivityRecord>
+  /**
+   * Set false to hold the first request until the seed is resolved. Prevents a
+   * slow full scan when a snapshot is about to arrive.
+   */
+  enabled?: boolean
 }
 
 type UseActivityResult = {
@@ -25,6 +35,8 @@ export function useActivity({
   pageSize = 10,
   initialSize,
   pollIntervalMs = 0,
+  seed,
+  enabled = true,
 }: UseActivityOptions = {}): UseActivityResult {
   const [limit, setLimit] = useState(initialSize ?? pageSize)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -34,7 +46,16 @@ export function useActivity({
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // A ref keeps seed changes (snapshot refreshes) from restarting the poll; the
+  // next request simply picks up the newer rows.
+  const seedRef = useRef(seed)
+  seedRef.current = seed
+
   useEffect(() => {
+    if (!enabled) {
+      return
+    }
+
     const controller = new AbortController()
     let cancelled = false
     let inFlight = false
@@ -56,7 +77,12 @@ export function useActivity({
       }
 
       try {
-        const page = await fetchActivity(limit, controller.signal, force)
+        const page = await fetchActivity(
+          limit,
+          controller.signal,
+          force,
+          seedRef.current,
+        )
         if (cancelled) {
           return
         }
@@ -125,7 +151,7 @@ export function useActivity({
     // `records.length` is intentionally not a dependency: it only decides the
     // loading flavour and must not retrigger the request.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [limit, refreshKey, pollIntervalMs])
+  }, [limit, refreshKey, pollIntervalMs, enabled])
 
   const loadMore = useCallback(() => {
     setLimit((value) => value + pageSize)
