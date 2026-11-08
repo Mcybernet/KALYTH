@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Wallet tracker — holder bubble map and share table
+   Wallet tracker — Bubblemaps-style holder clusters and share table
    ========================================================================== */
 
 .wallet-map {
@@ -8,54 +8,19 @@
   gap: var(--space-3);
 }
 
-.wallet-map__toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.wallet-map__legend {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-4);
-}
-
-.wallet-map__legend-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--color-text-secondary);
-  font-size: var(--text-xs);
-}
-
-.wallet-map__legend-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-.wallet-map__hint {
-  color: var(--color-text-secondary);
-  font-family: var(--font-mono);
-  font-size: var(--text-2xs);
-  letter-spacing: 0.02em;
-}
-
 .wallet-map__canvas {
   position: relative;
   overflow: hidden;
-  border: var(--border-subtle);
-  background: rgba(5, 5, 6, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 16px;
+  background: #04040b;
 }
 
 .wallet-map__svg {
   display: block;
   width: 100%;
   height: auto;
-  min-height: 380px;
+  min-height: 420px;
   cursor: grab;
   touch-action: none;
   user-select: none;
@@ -65,98 +30,245 @@
   cursor: grabbing;
 }
 
-.wallet-map__grid-line {
-  fill: none;
-  stroke: rgba(140, 133, 120, 0.1);
+/* --------------------------------------------------------------- Clusters -- */
+
+.wallet-map__cluster {
+  pointer-events: none;
+}
+
+.wallet-map__cluster-pill {
+  fill: rgba(6, 9, 24, 0.88);
+  stroke: rgba(148, 163, 184, 0.2);
   stroke-width: 1;
 }
 
-.wallet-map__orbit {
-  fill: none;
-  stroke: rgba(var(--color-primary-rgb), 0.1);
-  stroke-width: 1;
-  stroke-dasharray: 4 8;
+.wallet-map__cluster-text {
+  fill: #cbd5e1;
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.01em;
 }
 
 .wallet-map__edge {
-  fill: none;
-  stroke-linecap: round;
-  transition: stroke-opacity var(--transition-fast);
+  pointer-events: none;
 }
 
-.wallet-map__hub-disc {
-  fill: var(--color-surface);
-  stroke: rgba(var(--color-primary-rgb), 0.55);
+/* -------------------------------------------------------------------- Hub -- */
+
+.wallet-map__hub-ring {
+  fill: rgba(var(--color-primary-rgb), 0.1);
+  stroke: rgba(var(--color-primary-rgb), 0.6);
   stroke-width: 1.5;
 }
 
-.wallet-map__hub-ring {
+.wallet-map__hub-outline {
   fill: none;
-  stroke: rgba(var(--color-primary-rgb), 0.28);
+  stroke: rgba(255, 255, 255, 0.2);
   stroke-width: 1;
-  stroke-dasharray: 3 4;
+  pointer-events: none;
 }
 
-.wallet-map__hub-title {
-  fill: var(--color-text);
-  font-family: var(--font-display);
-  font-size: 13px;
-  font-weight: var(--weight-bold);
-  letter-spacing: 0.14em;
-  text-anchor: middle;
-}
-
-.wallet-map__hub-sub {
-  fill: var(--color-text-secondary);
-  font-family: var(--font-mono);
-  font-size: 7px;
-  letter-spacing: 0.16em;
-  text-anchor: middle;
-}
+/* ------------------------------------------------------------------ Nodes -- */
 
 .wallet-map__node {
   cursor: pointer;
   outline: none;
+  transition: opacity var(--transition-fast);
 }
 
 .wallet-map__node:focus-visible {
-  filter: drop-shadow(0 0 5px rgba(var(--color-primary-rgb), 0.9));
+  filter: drop-shadow(0 0 7px rgba(255, 255, 255, 0.9));
 }
 
 .wallet-map__bubble-percent {
-  fill: var(--color-text);
-  font-family: var(--font-mono);
-  font-size: 13px;
-  font-weight: var(--weight-semibold);
+  fill: #ffffff;
+  font-family: var(--font-sans);
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.02em;
   pointer-events: none;
-  text-anchor: middle;
+  paint-order: stroke;
+  stroke: rgba(4, 4, 11, 0.5);
+  stroke-width: 3px;
+  stroke-linejoin: round;
 }
 
-.wallet-map__bubble-percent--outside {
-  fill: var(--color-text-secondary);
+.wallet-map__bubble-sub {
+  fill: rgba(255, 255, 255, 0.74);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: rgba(4, 4, 11, 0.4);
+  stroke-width: 2.5px;
+  stroke-linejoin: round;
+}
+
+/* ----------------------------------------------------------------- Legend -- */
+
+.wallet-map__legend {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 172px;
+  padding: 10px 12px 8px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 12px;
+  background: rgba(5, 8, 20, 0.82);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(12px);
+}
+
+.wallet-map__legend-title {
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 9px;
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.wallet-map__legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #c7cbd9;
+  font-size: 11px;
+}
+
+.wallet-map__legend-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.wallet-map__legend-label {
+  flex: 1;
+}
+
+.wallet-map__legend-percent {
+  color: #8b93a7;
+  font-family: var(--font-mono);
   font-size: 10px;
 }
 
-.wallet-map__bubble-label {
-  fill: var(--color-text-secondary);
-  font-family: var(--font-mono);
+.wallet-map__legend-foot {
+  padding-top: 6px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  color: #6b7488;
   font-size: 9px;
-  letter-spacing: 0.02em;
-  pointer-events: none;
-  text-anchor: middle;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
+
+/* --------------------------------------------------------------- Controls -- */
 
 .wallet-map__controls {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  right: 12px;
+  bottom: 12px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 4px;
-  border: var(--border-subtle);
-  background: rgba(5, 5, 6, 0.78);
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 12px;
+  background: rgba(5, 8, 20, 0.82);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(12px);
 }
+
+.wallet-map__controls .icon-button {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #c7cbd9;
+}
+
+.wallet-map__controls .icon-button:hover {
+  background: rgba(var(--color-primary-rgb), 0.16);
+  color: #ffffff;
+}
+
+/* ---------------------------------------------------------------- Tooltip -- */
+
+.wallet-map__tooltip {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 214px;
+  padding: 12px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 12px;
+  background: rgba(5, 8, 20, 0.95);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+.wallet-map__tooltip-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #c7cbd9;
+  font-size: 11px;
+}
+
+.wallet-map__tooltip-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.wallet-map__tooltip-percent {
+  color: #ffffff;
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: var(--weight-bold);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.wallet-map__tooltip-percent span {
+  color: #8b93a7;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: var(--weight-regular);
+  letter-spacing: 0;
+}
+
+.wallet-map__tooltip-address {
+  padding-bottom: 5px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  color: #8b93a7;
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.wallet-map__tooltip-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  color: #8b93a7;
+  font-size: 10px;
+}
+
+.wallet-map__tooltip-row strong {
+  color: #e7eaf3;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: var(--weight-medium);
+}
+
+/* ---------------------------------------------------------------- Details -- */
 
 .wallet-map__details {
   display: flex;
@@ -164,9 +276,10 @@
   align-items: center;
   gap: var(--space-3);
   min-height: 56px;
-  padding: var(--space-3);
-  border: var(--border-subtle);
-  background: rgba(10, 10, 12, 0.7);
+  padding: 12px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.13);
+  border-radius: 12px;
+  background: rgba(6, 9, 24, 0.65);
 }
 
 .wallet-map__detail-swatch {
@@ -323,12 +436,28 @@
   animation: spin 900ms linear infinite;
 }
 
+@media (max-width: 560px) {
+  /* SVG labels shrink with the viewBox; the legend keeps the mapping on phones. */
+  .wallet-map__cluster {
+    display: none;
+  }
+}
+
 @media (max-width: 720px) {
   .wallet-map__svg {
-    min-height: 300px;
+    min-height: 340px;
   }
 
-  .wallet-map__hint {
+  .wallet-map__tooltip {
+    display: none;
+  }
+
+  .wallet-map__legend {
+    min-width: 150px;
+    padding: 8px 10px 6px;
+  }
+
+  .wallet-map__legend-foot {
     display: none;
   }
 

@@ -7,6 +7,7 @@ import {
 } from 'react'
 import { ExternalLink, Maximize2, Minus, Plus } from 'lucide-react'
 import { explorerAddressUrl, shortenAddress } from '../lib/addresses'
+import { KLYTH_LOGO_URL } from '../lib/assets'
 import {
   formatHolderPercent,
   type HolderRole,
@@ -20,75 +21,155 @@ type WalletBubbleMapProps = {
 
 const WIDTH = 1000
 const HEIGHT = 640
-const HUB = { x: WIDTH / 2, y: HEIGHT / 2 }
-const HUB_RADIUS = 58
-const MAX_BUBBLE_RADIUS = 94
-const PER_RING = 6
+const HUB = { x: WIDTH / 2, y: 330 }
+const HUB_RADIUS = 40
+const MAX_BUBBLE_RADIUS = 86
+const ORBIT = HUB_RADIUS + MAX_BUBBLE_RADIUS + 56
 
+/** Bright, saturated cluster colors in the spirit of Bubblemaps. */
 const ROLE_COLORS: Record<HolderRole, string> = {
-  burn: '#ff7a6e',
-  vault: '#7fd6a4',
-  treasury: '#f2c46d',
-  demo: '#b9bec7',
-  wallet: '#e0a64b',
+  wallet: '#38bdf8',
+  vault: '#22c55e',
+  burn: '#ef4444',
+  treasury: '#f59e0b',
+  demo: '#a855f7',
 }
 
-const roleLegend: Array<{ role: HolderRole; label: string }> = [
-  { role: 'wallet', label: 'Holder' },
-  { role: 'vault', label: 'Curve vault' },
-  { role: 'burn', label: 'Burn reserve' },
-  { role: 'treasury', label: 'Treasury' },
-  { role: 'demo', label: 'Demo wallet' },
-]
+const ROLE_LABELS: Record<HolderRole, string> = {
+  wallet: 'Holders',
+  vault: 'Curve vault',
+  burn: 'Burn reserve',
+  treasury: 'Treasury',
+  demo: 'Demo wallet',
+}
 
 type LayoutNode = {
   holder: TokenHolder
   x: number
   y: number
   radius: number
-  color: string
 }
 
-/** A stable pseudo-random angle so the map keeps its shape between polls. */
-function angleJitter(seed: string): number {
+type ClusterLayout = {
+  role: HolderRole
+  label: string
+  color: string
+  percent: number
+  nodes: LayoutNode[]
+  labelX: number
+  labelY: number
+  labelWidth: number
+  stemTop: number
+  stemBottom: number
+}
+
+type Layout = {
+  nodes: LayoutNode[]
+  clusters: ClusterLayout[]
+}
+
+/** A stable pseudo-random angle so clusters keep their shape between polls. */
+function seedUnit(seed: string): number {
   let hash = 2166136261
   for (let index = 0; index < seed.length; index += 1) {
     hash = Math.imul(hash ^ seed.charCodeAt(index), 16777619)
   }
-  const unit = (hash >>> 0) / 4294967295
-  return (unit - 0.5) * 0.22
+  return (hash >>> 0) / 4294967295
 }
 
-function computeNodes(holders: TokenHolder[]): LayoutNode[] {
+function computeLayout(holders: TokenHolder[]): Layout {
   if (holders.length === 0) {
-    return []
+    return { nodes: [], clusters: [] }
+  }
+
+  const groups = new Map<HolderRole, TokenHolder[]>()
+  for (const holder of holders) {
+    const group = groups.get(holder.role) ?? []
+    group.push(holder)
+    groups.set(holder.role, group)
   }
 
   const maxPercent = Math.max(...holders.map((holder) => holder.percent), 0.0001)
-  const maxRadius = MAX_BUBBLE_RADIUS
-  const orbitBase = HUB_RADIUS + maxRadius + 42
-  const ringGap = maxRadius * 1.7 + 24
+  const radiusFor = (percent: number) =>
+    13 + (MAX_BUBBLE_RADIUS - 13) * Math.sqrt(Math.max(percent, 0) / maxPercent)
 
-  return holders.map((holder, index) => {
-    const ring = Math.floor(index / PER_RING)
-    const ringStart = ring * PER_RING
-    const ringCount = Math.min(PER_RING, holders.length - ringStart)
-    const withinRing = index - ringStart
-    const spacing = (Math.PI * 2) / Math.max(ringCount, 1)
-    const angle =
-      -Math.PI / 2 + withinRing * spacing + angleJitter(holder.owner) * (ringCount >= 5 ? 0.5 : 1)
-    const radius =
-      14 + (maxRadius - 14) * Math.sqrt(Math.max(holder.percent, 0) / maxPercent)
-    const orbit = orbitBase + ring * ringGap
-
-    return {
-      holder,
-      x: HUB.x + Math.cos(angle) * orbit,
-      y: HUB.y + Math.sin(angle) * orbit,
-      radius,
-      color: ROLE_COLORS[holder.role],
-    }
+  const roles = Array.from(groups.keys()).sort((left, right) => {
+    const leftPercent = groups.get(left)!.reduce((sum, holder) => sum + holder.percent, 0)
+    const rightPercent = groups.get(right)!.reduce((sum, holder) => sum + holder.percent, 0)
+    return rightPercent - leftPercent
   })
+
+  const nodes: LayoutNode[] = []
+  const clusters: ClusterLayout[] = []
+
+  roles.forEach((role, clusterIndex) => {
+    const clusterHolders = groups.get(role)!
+    const color = ROLE_COLORS[role]
+    const angle =
+      -Math.PI / 2 +
+      (clusterIndex / roles.length) * Math.PI * 2 +
+      (seedUnit(role) - 0.5) * 0.5
+    const orbit = ORBIT + (clusterIndex % 2 === 0 ? 0 : 18)
+    const centerX = HUB.x + Math.cos(angle) * orbit
+    const centerY = HUB.y + Math.sin(angle) * orbit
+
+    const largestRadius = Math.max(
+      ...clusterHolders.map((holder) => radiusFor(holder.percent)),
+    )
+    const clusterNodes = clusterHolders.map((holder, memberIndex) => {
+      const radius = radiusFor(holder.percent)
+      if (memberIndex === 0) {
+        return { holder, x: centerX, y: centerY, radius }
+      }
+
+      // Satellites orbit the largest wallet tangentially, so small holders stay
+      // in the same cluster without landing inside the big bubble.
+      const memberAngle =
+        angle +
+        Math.PI / 2 +
+        ((memberIndex - 1) / Math.max(1, clusterHolders.length - 1)) * Math.PI * 2 +
+        (seedUnit(holder.owner) - 0.5) * 0.35
+      const spread = largestRadius + radius + 16
+      return {
+        holder,
+        x: centerX + Math.cos(memberAngle) * spread,
+        y: centerY + Math.sin(memberAngle) * spread,
+        radius,
+      }
+    })
+
+    nodes.push(...clusterNodes)
+
+    const percent = clusterHolders.reduce((sum, holder) => sum + holder.percent, 0)
+    const label =
+      clusterHolders.length > 1
+        ? `${ROLE_LABELS[role]} · ${formatHolderPercent(percent)}`
+        : ROLE_LABELS[role]
+    const labelWidth = Math.max(74, label.length * 6.1 + 34)
+    const minY = Math.min(...clusterNodes.map((node) => node.y - node.radius))
+    const maxY = Math.max(...clusterNodes.map((node) => node.y + node.radius))
+    const labelCenterX = Math.min(
+      WIDTH - labelWidth / 2 - 10,
+      Math.max(labelWidth / 2 + 10, centerX),
+    )
+    const above = minY > 34
+    const labelY = above ? minY - 34 : maxY + 12
+
+    clusters.push({
+      role,
+      label,
+      color,
+      percent,
+      nodes: clusterNodes,
+      labelX: labelCenterX - labelWidth / 2,
+      labelY,
+      labelWidth,
+      stemTop: above ? labelY + 24 : labelY,
+      stemBottom: above ? minY - 4 : maxY + 4,
+    })
+  })
+
+  return { nodes, clusters }
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -96,7 +177,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 export function WalletBubbleMap({ holders, tradeCounts }: WalletBubbleMapProps) {
-  const nodes = useMemo(() => computeNodes(holders), [holders])
+  const layout = useMemo(() => computeLayout(holders), [holders])
   const svgRef = useRef<SVGSVGElement>(null)
   const dragRef = useRef<{
     pointerId: number
@@ -140,7 +221,12 @@ export function WalletBubbleMap({ holders, tradeCounts }: WalletBubbleMapProps) 
   }, [])
 
   const activeOwner = hovered ?? selected
-  const activeNode = nodes.find((node) => node.holder.owner === activeOwner) ?? null
+  const activeNode = layout.nodes.find((node) => node.holder.owner === activeOwner) ?? null
+  const activeTrades = activeNode ? (tradeCounts.get(activeNode.holder.owner) ?? 0) : 0
+  const totalTrades = useMemo(
+    () => Array.from(tradeCounts.values()).reduce((sum, count) => sum + count, 0),
+    [tradeCounts],
+  )
 
   function zoomBy(factor: number) {
     setView((previous) => {
@@ -157,6 +243,10 @@ export function WalletBubbleMap({ holders, tradeCounts }: WalletBubbleMapProps) 
   function handlePointerDown(event: ReactPointerEvent<SVGSVGElement>) {
     if (event.button !== 0) {
       return
+    }
+    const target = event.target as Element | null
+    if (!target?.closest('.wallet-map__node')) {
+      setSelected(null)
     }
     event.currentTarget.setPointerCapture(event.pointerId)
     dragRef.current = {
@@ -195,32 +285,24 @@ export function WalletBubbleMap({ holders, tradeCounts }: WalletBubbleMapProps) 
     }
   }
 
-  const activeTrades = activeNode ? (tradeCounts.get(activeNode.holder.owner) ?? 0) : 0
-  const totalTrades = useMemo(
-    () => Array.from(tradeCounts.values()).reduce((sum, count) => sum + count, 0),
-    [tradeCounts],
-  )
+  const tooltipStyle = activeNode
+    ? (() => {
+        const screenX = activeNode.x * view.scale + view.x
+        const screenY = activeNode.y * view.scale + view.y
+        const offset = activeNode.radius * view.scale + 12
+        const below = screenY < 240
+        return {
+          left: `${clamp((screenX / WIDTH) * 100, 17, 83)}%`,
+          top: `${(screenY / HEIGHT) * 100}%`,
+          transform: below
+            ? `translate(-50%, ${offset}px)`
+            : `translate(-50%, calc(-100% - ${offset}px))`,
+        }
+      })()
+    : undefined
 
   return (
     <div className="wallet-map">
-      <div className="wallet-map__toolbar">
-        <div className="wallet-map__legend">
-          {roleLegend.map((item) => (
-            <span className="wallet-map__legend-item" key={item.role}>
-              <span
-                className="wallet-map__legend-dot"
-                style={{ background: ROLE_COLORS[item.role] }}
-                aria-hidden="true"
-              />
-              {item.label}
-            </span>
-          ))}
-        </div>
-        <span className="wallet-map__hint">
-          {totalTrades} curve trades · scroll to zoom · drag to pan
-        </span>
-      </div>
-
       <div className="wallet-map__canvas">
         <svg
           ref={svgRef}
@@ -234,78 +316,119 @@ export function WalletBubbleMap({ holders, tradeCounts }: WalletBubbleMapProps) 
           onPointerCancel={handlePointerUp}
         >
           <defs>
-            <pattern
-              id="wallet-map-grid"
-              width="40"
-              height="40"
-              patternUnits="userSpaceOnUse"
-            >
-              <path d="M 40 0 L 0 0 0 40" className="wallet-map__grid-line" />
+            <radialGradient id="wallet-map-glow" cx="50%" cy="42%" r="72%">
+              <stop offset="0%" stopColor="#15204d" stopOpacity="0.95" />
+              <stop offset="55%" stopColor="#0a1029" stopOpacity="0.55" />
+              <stop offset="100%" stopColor="#04040b" stopOpacity="0" />
+            </radialGradient>
+            <pattern id="wallet-map-dots" width="26" height="26" patternUnits="userSpaceOnUse">
+              <circle cx="1.5" cy="1.5" r="1" fill="rgba(148, 163, 184, 0.12)" />
             </pattern>
+            <clipPath id="wallet-hub-clip">
+              <circle cx={HUB.x} cy={HUB.y} r={HUB_RADIUS - 2} />
+            </clipPath>
+            <filter id="wallet-hub-glow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="6" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
           </defs>
 
-          <rect width={WIDTH} height={HEIGHT} fill="url(#wallet-map-grid)" />
+          <rect width={WIDTH} height={HEIGHT} fill="#04040b" />
+          <rect width={WIDTH} height={HEIGHT} fill="url(#wallet-map-glow)" />
+          <rect width={WIDTH} height={HEIGHT} fill="url(#wallet-map-dots)" />
 
           <g transform={`translate(${view.x} ${view.y}) scale(${view.scale})`}>
-            <circle cx={HUB.x} cy={HUB.y} r={HUB_RADIUS + 74} className="wallet-map__orbit" />
-            <circle cx={HUB.x} cy={HUB.y} r={HUB_RADIUS + 154} className="wallet-map__orbit" />
+            {layout.clusters.map((cluster) => (
+              <g key={`label-${cluster.role}`} className="wallet-map__cluster">
+                <line
+                  x1={cluster.labelX + cluster.labelWidth / 2}
+                  y1={cluster.stemTop}
+                  x2={cluster.labelX + cluster.labelWidth / 2}
+                  y2={cluster.stemBottom}
+                  stroke={cluster.color}
+                  strokeOpacity={0.4}
+                  strokeWidth={1}
+                />
+                <rect
+                  x={cluster.labelX}
+                  y={cluster.labelY}
+                  width={cluster.labelWidth}
+                  height={24}
+                  rx={12}
+                  className="wallet-map__cluster-pill"
+                />
+                <circle
+                  cx={cluster.labelX + 14}
+                  cy={cluster.labelY + 12}
+                  r={4}
+                  fill={cluster.color}
+                />
+                <text
+                  x={cluster.labelX + 24}
+                  y={cluster.labelY + 15.5}
+                  className="wallet-map__cluster-text"
+                >
+                  {cluster.label}
+                </text>
+              </g>
+            ))}
 
-            {nodes.map((node) => {
+            {layout.nodes.map((node) => {
               const count = tradeCounts.get(node.holder.owner) ?? 0
-              const dx = HUB.x - node.x
-              const dy = HUB.y - node.y
-              const length = Math.hypot(dx, dy) || 1
-              const ux = dx / length
-              const uy = dy / length
-              const startX = node.x + ux * (node.radius + 4)
-              const startY = node.y + uy * (node.radius + 4)
-              const endX = HUB.x - ux * (HUB_RADIUS + 6)
-              const endY = HUB.y - uy * (HUB_RADIUS + 6)
-              const bend = Math.min(70, length * 0.22) * (node.x < HUB.x ? -1 : 1)
-              const controlX = (startX + endX) / 2 - uy * bend
-              const controlY = (startY + endY) / 2 + ux * bend
               const isActive = activeOwner === node.holder.owner
               const isDimmed = activeOwner !== null && !isActive
 
               return (
-                <path
+                <line
                   key={`edge-${node.holder.owner}`}
-                  d={`M ${startX} ${startY} Q ${controlX} ${controlY} ${endX} ${endY}`}
                   className="wallet-map__edge"
-                  stroke={node.color}
-                  strokeWidth={count === 0 ? 1 : 1 + Math.min(count, 18) * 0.45}
+                  x1={HUB.x}
+                  y1={HUB.y}
+                  x2={node.x}
+                  y2={node.y}
+                  stroke={ROLE_COLORS[node.holder.role]}
+                  strokeWidth={count === 0 ? 1 : 1 + Math.min(count, 18) * 0.35}
                   strokeDasharray={count === 0 ? '3 6' : undefined}
-                  strokeOpacity={isDimmed ? 0.1 : isActive ? 0.75 : 0.34}
+                  strokeOpacity={isDimmed ? 0.08 : isActive ? 0.85 : 0.32}
+                  strokeLinecap="round"
                 />
               )
             })}
 
-            <g className="wallet-map__hub">
-              <circle cx={HUB.x} cy={HUB.y} r={HUB_RADIUS} className="wallet-map__hub-disc" />
-              <circle cx={HUB.x} cy={HUB.y} r={HUB_RADIUS - 9} className="wallet-map__hub-ring" />
-              <text x={HUB.x} y={HUB.y - 4} className="wallet-map__hub-title">
-                KLYTH
-              </text>
-              <text x={HUB.x} y={HUB.y + 12} className="wallet-map__hub-sub">
-                BONDING CURVE
-              </text>
+            <g className="wallet-map__hub" filter="url(#wallet-hub-glow)">
+              <circle cx={HUB.x} cy={HUB.y} r={HUB_RADIUS + 3} className="wallet-map__hub-ring" />
+              <circle cx={HUB.x} cy={HUB.y} r={HUB_RADIUS} fill="#0a1024" />
+              <image
+                href={KLYTH_LOGO_URL}
+                x={HUB.x - HUB_RADIUS}
+                y={HUB.y - HUB_RADIUS}
+                width={HUB_RADIUS * 2}
+                height={HUB_RADIUS * 2}
+                preserveAspectRatio="xMidYMid slice"
+                clipPath="url(#wallet-hub-clip)"
+              />
+              <circle cx={HUB.x} cy={HUB.y} r={HUB_RADIUS} className="wallet-map__hub-outline" />
             </g>
 
-            {nodes.map((node) => {
+            {layout.nodes.map((node) => {
               const isActive = activeOwner === node.holder.owner
               const isDimmed = activeOwner !== null && !isActive
-              const insideLabel = node.radius >= 32
-              const shortOwner = shortenAddress(node.holder.owner, 4, 4)
+              const color = ROLE_COLORS[node.holder.role]
+              const inside = node.radius >= 24
+              const percentSize = Math.max(10, Math.min(19, node.radius * 0.27))
 
               return (
                 <g
                   key={node.holder.owner}
                   className={`wallet-map__node${isActive ? ' wallet-map__node--active' : ''}`}
                   transform={`translate(${node.x} ${node.y})`}
-                  opacity={isDimmed ? 0.55 : 1}
+                  opacity={isDimmed ? 0.5 : 1}
                   role="button"
                   tabIndex={0}
-                  aria-label={`${node.holder.label} ${shortOwner}, ${formatHolderPercent(node.holder.percent)} of supply`}
+                  aria-label={`${node.holder.label} ${shortenAddress(node.holder.owner, 4, 4)}, ${formatHolderPercent(node.holder.percent)} of supply`}
                   onPointerEnter={() => setHovered(node.holder.owner)}
                   onPointerLeave={() => setHovered(null)}
                   onFocus={() => setHovered(node.holder.owner)}
@@ -320,46 +443,60 @@ export function WalletBubbleMap({ holders, tradeCounts }: WalletBubbleMapProps) 
                 >
                   {isActive ? (
                     <circle
-                      r={node.radius + 6}
+                      r={node.radius + 7}
                       fill="none"
-                      stroke={node.color}
-                      strokeOpacity={0.4}
-                      strokeWidth={1}
+                      stroke={color}
+                      strokeOpacity={0.55}
+                      strokeWidth={3}
                     />
                   ) : null}
                   <circle
                     r={node.radius}
-                    fill={node.color}
-                    fillOpacity={isActive ? 0.3 : 0.16}
-                    stroke={node.color}
-                    strokeWidth={isActive ? 2.4 : 1.4}
+                    fill={color}
+                    fillOpacity={0.88}
+                    stroke="rgba(255, 255, 255, 0.28)"
+                    strokeWidth={1.5}
                   />
-                  {insideLabel ? (
-                    <text textAnchor="middle" y={2} className="wallet-map__bubble-percent">
-                      {formatHolderPercent(node.holder.percent)}
-                    </text>
-                  ) : null}
                   <text
                     textAnchor="middle"
-                    y={insideLabel ? 20 : node.radius + 14}
-                    className="wallet-map__bubble-label"
+                    y={inside ? percentSize * 0.32 : node.radius + 15}
+                    className="wallet-map__bubble-percent"
+                    style={{ fontSize: `${percentSize}px` }}
                   >
-                    {shortOwner}
+                    {formatHolderPercent(node.holder.percent)}
                   </text>
-                  {insideLabel ? null : (
+                  {inside && node.radius >= 46 ? (
                     <text
                       textAnchor="middle"
-                      y={node.radius + 26}
-                      className="wallet-map__bubble-percent wallet-map__bubble-percent--outside"
+                      y={percentSize * 0.32 + 17}
+                      className="wallet-map__bubble-sub"
                     >
-                      {formatHolderPercent(node.holder.percent)}
+                      {shortenAddress(node.holder.owner, 5, 4)}
                     </text>
-                  )}
+                  ) : null}
                 </g>
               )
             })}
           </g>
         </svg>
+
+        <div className="wallet-map__legend" aria-label="Holder clusters">
+          <span className="wallet-map__legend-title">Clusters</span>
+          {layout.clusters.map((cluster) => (
+            <div className="wallet-map__legend-row" key={`legend-${cluster.role}`}>
+              <span
+                className="wallet-map__legend-dot"
+                style={{ background: cluster.color }}
+                aria-hidden="true"
+              />
+              <span className="wallet-map__legend-label">{ROLE_LABELS[cluster.role]}</span>
+              <span className="wallet-map__legend-percent">
+                {formatHolderPercent(cluster.percent)}
+              </span>
+            </div>
+          ))}
+          <div className="wallet-map__legend-foot">{totalTrades} curve trades</div>
+        </div>
 
         <div className="wallet-map__controls">
           <button
@@ -394,6 +531,34 @@ export function WalletBubbleMap({ holders, tradeCounts }: WalletBubbleMapProps) 
             <Maximize2 size={14} aria-hidden="true" />
           </button>
         </div>
+
+        {activeNode ? (
+          <div className="wallet-map__tooltip" style={tooltipStyle}>
+            <div className="wallet-map__tooltip-head">
+              <span
+                className="wallet-map__tooltip-dot"
+                style={{ background: ROLE_COLORS[activeNode.holder.role] }}
+                aria-hidden="true"
+              />
+              {activeNode.holder.label}
+            </div>
+            <div className="wallet-map__tooltip-percent">
+              {formatHolderPercent(activeNode.holder.percent)}
+              <span> of supply</span>
+            </div>
+            <div className="wallet-map__tooltip-address">
+              {shortenAddress(activeNode.holder.owner, 8, 8)}
+            </div>
+            <div className="wallet-map__tooltip-row">
+              <span>Balance</span>
+              <strong>{activeNode.holder.amount} KLYTH</strong>
+            </div>
+            <div className="wallet-map__tooltip-row">
+              <span>Curve trades</span>
+              <strong>{activeTrades}</strong>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <div className="wallet-map__details" aria-live="polite">
@@ -401,7 +566,7 @@ export function WalletBubbleMap({ holders, tradeCounts }: WalletBubbleMapProps) 
           <>
             <span
               className="wallet-map__detail-swatch"
-              style={{ background: activeNode.color }}
+              style={{ background: ROLE_COLORS[activeNode.holder.role] }}
               aria-hidden="true"
             />
             <div className="wallet-map__detail-main">
