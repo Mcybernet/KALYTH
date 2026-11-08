@@ -11,6 +11,7 @@ import { ThreeStage } from '../components/ThreeStage'
 import { useActivity } from '../hooks/useActivity'
 import { useCurveState } from '../hooks/useCurveState'
 import { useKlythData } from '../hooks/useKlythData'
+import { useOhlcSnapshot } from '../hooks/useOhlcSnapshot'
 import {
   MINT_ADDRESS,
   PROGRAM_ADDRESS,
@@ -27,6 +28,7 @@ import {
   marginalPriceSol,
 } from '../lib/curve'
 import { buildExecutionPoints } from '../lib/history'
+import { mergeActivityRecords } from '../lib/ohlc'
 import { useNavigation } from '../lib/navigation'
 
 const KlythCoin = lazy(() => import('../three/KlythCoin'))
@@ -45,6 +47,7 @@ export function OverviewPage() {
   const { loading: dataLoading, error: dataError, mint, burnStats } = useKlythData()
   const curve = useCurveState()
   const activity = useActivity({ pageSize: ACTIVITY_WINDOW })
+  const ohlc = useOhlcSnapshot()
 
   const state = curve.state
   const soldSupply = state?.soldSupply ?? null
@@ -63,8 +66,12 @@ export function OverviewPage() {
   const error = dataError ?? curve.error
 
   const trades = useMemo(
-    () => buildExecutionPoints(activity.records, curve.state?.soldSupply ?? null),
-    [activity.records, curve.state?.soldSupply],
+    () =>
+      buildExecutionPoints(
+        mergeActivityRecords(ohlc.records, activity.records),
+        curve.state?.soldSupply ?? null,
+      ),
+    [ohlc.records, activity.records, curve.state?.soldSupply],
   )
 
   const priceValue = marginal !== null ? formatSolPrice(marginal) : loading ? '…' : '—'
@@ -238,7 +245,7 @@ export function OverviewPage() {
                 initialPrice={initialPriceSol}
                 slope={slopeSol}
                 trades={trades}
-                historyWindow={ACTIVITY_WINDOW}
+                historyWindow={ohlc.records.length > 0 ? null : ACTIVITY_WINDOW}
               />
             </Suspense>
 

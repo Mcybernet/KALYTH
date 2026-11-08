@@ -5,7 +5,16 @@ on:
     branches: [main]
     paths:
       - 'app/frontend/**'
+      - 'scripts/build-ohlc-json.mjs'
+      - 'scripts/burn-common.mjs'
+      - 'scripts/package.json'
+      - 'scripts/package-lock.json'
       - '.github/workflows/deploy-pages.yml'
+  schedule:
+    # Refresh the OHLC snapshot and redeploy. GitHub cron is UTC and
+    # best-effort; a missed slot is harmless because the snapshot is extended
+    # from the history it already has.
+    - cron: '*/15 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -32,11 +41,30 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: app/frontend/package-lock.json
+          cache-dependency-path: |
+            app/frontend/package-lock.json
+            scripts/package-lock.json
 
       - name: Configure Pages
         id: pages
         uses: actions/configure-pages@v5
+
+      - name: Install snapshot dependencies
+        working-directory: scripts
+        run: npm ci
+
+      - name: Build OHLC snapshot
+        working-directory: scripts
+        continue-on-error: true
+        timeout-minutes: 15
+        env:
+          DEVNET_RPC_URL: ${{ secrets.DEVNET_RPC_URL }}
+        run: |
+          BASE="${{ steps.pages.outputs.base_url }}${{ steps.pages.outputs.base_path }}"
+          BASE="${BASE%/}"
+          node build-ohlc-json.mjs \
+            --output ../app/frontend/public/data/klyth-trades.json \
+            --base "$BASE/data/klyth-trades.json"
 
       - name: Install dependencies
         run: npm ci

@@ -1,8 +1,8 @@
 # Burn automation ops
 
 On-chain program changes live in `programs/nebula_curve`. This folder contains
-the one-time migration and the daily crank used by an external scheduler
-(GitHub Actions or Windows Task Scheduler).
+the one-time migration, the daily crank, and the trade-snapshot builder used by
+GitHub Actions.
 
 ## How it works
 
@@ -205,6 +205,38 @@ When the log says `SOL is below the 0.005 SOL buffer` or `Wallet SOL exhausted;
 waiting for a top-up`, the bot has stopped by design. Send more Devnet SOL to
 the demo address; the next run picks it up automatically. It never tries to
 refill itself from the curve reserve.
+
+## 6. Trade snapshot for OHLC candles
+
+The frontend chart used to build candles from the newest 40 activity rows, so
+candles changed whenever those rows scrolled out of the window. `build-ohlc-json.mjs`
+writes every confirmed KLYTH buy/sell to `app/frontend/public/data/klyth-trades.json`,
+and the frontend merges that file with the live activity window. The JSON file is
+served by GitHub Pages and refreshed by `deploy-pages.yml` every 15 minutes.
+
+```bash
+cd scripts
+npm ci
+npm run ohlc:snapshot
+```
+
+Options:
+
+| Flag | Meaning |
+| --- | --- |
+| `--output <path>` | Output file (default `app/frontend/public/data/klyth-trades.json`) |
+| `--base <url\|path>` | Extend an existing snapshot instead of rescanning |
+| `--full` | Ignore `--base` and rescan the whole curve history |
+
+The GitHub workflow passes `--base` pointing at the currently deployed file, so
+only newer signatures are fetched. If the base file is missing or invalid, the
+script falls back to a full scan. The public Devnet RPC rate-limits hard; set
+`DEVNET_RPC_URL` to a dedicated provider for faster runs. The workflow step is
+`continue-on-error`, so a failed refresh ships the snapshot that is already in
+the repository.
+
+Commit the generated file. It is the baseline for the first deploy and the
+fallback when a refresh fails. Do not hand-edit it; rerun the script instead.
 
 ## Dry run
 

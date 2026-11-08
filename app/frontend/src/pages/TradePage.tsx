@@ -8,6 +8,7 @@ import { CurveProgress } from '../components/CurveProgress'
 import { TransactionStatus, type TransactionStatusState } from '../components/TransactionStatus'
 import { useActivity } from '../hooks/useActivity'
 import { useCurveState } from '../hooks/useCurveState'
+import { useOhlcSnapshot } from '../hooks/useOhlcSnapshot'
 import { useWalletBalances } from '../hooks/useWalletBalances'
 import {
   INITIAL_PRICE_DIVISOR,
@@ -26,6 +27,7 @@ import {
   quoteSellReturn,
 } from '../lib/curve'
 import { buildExecutionPoints } from '../lib/history'
+import { mergeActivityRecords } from '../lib/ohlc'
 
 const BondingCurveChart = lazy(() =>
   import('../components/BondingCurveChart').then((module) => ({
@@ -131,6 +133,7 @@ export function TradePage() {
     pageSize: ACTIVITY_WINDOW,
     pollIntervalMs: ACTIVITY_POLL_MS,
   })
+  const ohlc = useOhlcSnapshot()
 
   const [mode, setMode] = useState<TradeMode>('buy')
   const [buyInput, setBuyInput] = useState('')
@@ -156,8 +159,12 @@ export function TradePage() {
       : null
 
   const trades = useMemo(
-    () => buildExecutionPoints(activity.records, curve.state?.soldSupply ?? null),
-    [activity.records, curve.state?.soldSupply],
+    () =>
+      buildExecutionPoints(
+        mergeActivityRecords(ohlc.records, activity.records),
+        curve.state?.soldSupply ?? null,
+      ),
+    [ohlc.records, activity.records, curve.state?.soldSupply],
   )
 
   const buyLamports = useMemo(() => parseDecimal(buyInput, 9), [buyInput])
@@ -459,7 +466,7 @@ export function TradePage() {
             previewAmount={previewAmount}
             previewMode={mode}
             trades={trades}
-            historyWindow={ACTIVITY_WINDOW}
+            historyWindow={ohlc.records.length > 0 ? null : ACTIVITY_WINDOW}
           />
         </Suspense>
 
