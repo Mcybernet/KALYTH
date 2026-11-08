@@ -3,6 +3,7 @@ import { RefreshCw } from 'lucide-react'
 import { ActivityTable } from '../components/ActivityTable'
 import { PageHeader } from '../components/PageHeader'
 import { useActivity } from '../hooks/useActivity'
+import { useOhlcSnapshot } from '../hooks/useOhlcSnapshot'
 import type { ActivityKind } from '../lib/history'
 
 const filters = ['All', 'Buy', 'Sell', 'Burn'] as const
@@ -15,12 +16,21 @@ const filterKinds: Record<Exclude<Filter, 'All'>, ActivityKind> = {
 }
 
 const PAGE_SIZE = 10
+const ACTIVITY_POLL_MS = 20_000
 
 export function ActivityPage() {
   const [activeFilter, setActiveFilter] = useState<Filter>('All')
   const [query, setQuery] = useState('')
+  // The shipped snapshot already contains most signatures, so the ledger paints
+  // from it and only new transactions hit the RPC. Polls keep it live.
+  const ohlc = useOhlcSnapshot()
   const { records, loading, loadingMore, error, hasMore, loadMore, refresh } =
-    useActivity({ pageSize: PAGE_SIZE })
+    useActivity({
+      pageSize: PAGE_SIZE,
+      pollIntervalMs: ACTIVITY_POLL_MS,
+      seed: ohlc.records,
+      enabled: !ohlc.loading,
+    })
 
   const normalizedQuery = query.trim().toLowerCase()
   const visibleRecords = records.filter((record) => {
