@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { createStudioEnvironment } from './environment'
 import { KLYTH_LOGO_URL } from '../lib/assets'
+import { deviceTimeZone, readClock, resolveVisitorTimeZone } from '../lib/clock'
 
 /**
  * KLYTH coin.
@@ -220,22 +221,32 @@ export default function KlythCoin() {
     const frontTexture = makeTexture(frontCanvas)
     let disposed = false
 
-    if (frontCtx) {
+    // ------------------------------------------------------- spinning medallion --
+    // The KALYTH mark is lifted onto its own transparent plane so it can turn
+    // independently of the coin. Additive blending makes the asset's dark field
+    // vanish against the struck metal, exactly like the screen composite this
+    // replaces, while leaving the bright ring and lettering to catch the light.
+    const LOGO_SIZE = 512
+    const logoCanvas = document.createElement('canvas')
+    logoCanvas.width = LOGO_SIZE
+    logoCanvas.height = LOGO_SIZE
+    const logoCtx = logoCanvas.getContext('2d')
+    const logoTexture = makeTexture(logoCanvas)
+
+    if (logoCtx) {
       const logo = new Image()
       logo.src = KLYTH_LOGO_URL
       logo.onload = () => {
         if (disposed) {
           return
         }
-        const c = FACE_SIZE / 2
+        const c = LOGO_SIZE / 2
         const radius = c * 0.76
-        frontCtx.save()
-        frontCtx.beginPath()
-        frontCtx.arc(c, c, radius, 0, TAU)
-        frontCtx.clip()
-        // The mark's dark field disappears; its light ring lifts off the metal.
-        frontCtx.globalCompositeOperation = 'screen'
-        frontCtx.globalAlpha = 0.97
+        logoCtx.save()
+        logoCtx.beginPath()
+        logoCtx.arc(c, c, radius, 0, TAU)
+        logoCtx.clip()
+        logoCtx.globalAlpha = 0.97
         // Contain the asset in a square without stretching its aspect ratio.
         const fit = Math.min(
           (radius * 2) / logo.naturalWidth,
@@ -243,15 +254,15 @@ export default function KlythCoin() {
         )
         const drawWidth = logo.naturalWidth * fit
         const drawHeight = logo.naturalHeight * fit
-        frontCtx.drawImage(
+        logoCtx.drawImage(
           logo,
           c - drawWidth / 2,
           c - drawHeight / 2,
           drawWidth,
           drawHeight,
         )
-        frontCtx.restore()
-        frontTexture.needsUpdate = true
+        logoCtx.restore()
+        logoTexture.needsUpdate = true
       }
     }
 
@@ -483,6 +494,24 @@ export default function KlythCoin() {
     logoRing.scale.z = 0.55
     coin.add(logoRing)
 
+    // The medallion itself: the plane matches the faceplate radius so the
+    // texture keeps the baked artwork's 0.76-of-the-dial footprint. It sits
+    // 2mm proud of the plate, just under the raised die ring.
+    const logoPlaneGeometry = track.geo(
+      new THREE.CircleGeometry(R - 0.056, 96),
+    )
+    const logoPlaneMaterial = track.mat(
+      new THREE.MeshBasicMaterial({
+        map: logoTexture,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
+    )
+    const logoPlane = new THREE.Mesh(logoPlaneGeometry, logoPlaneMaterial)
+    logoPlane.position.z = FACE_Z + 0.002
+    coin.add(logoPlane)
+
     // ---------------------------------------------------------- reverse group --
     // Local +z points out of the reverse face; the group is turned to the back.
     const reverse = new THREE.Group()
@@ -497,7 +526,7 @@ export default function KlythCoin() {
     reverse.add(backPlate)
 
     // Stepped chapter ring carries the numerals and the minute track.
-    const chapterGeometry = track.geo(new THREE.RingGeometry(0.86, 1.135, 200, 1))
+    const chapterGeometry = track.geo(new THREE.RingGeometry(0.76, 1.135, 200, 1))
     const chapter = new THREE.Mesh(chapterGeometry, chapterMaterial)
     chapter.position.z = FACE_Z + 0.012
     reverse.add(chapter)
@@ -509,7 +538,7 @@ export default function KlythCoin() {
     dial.position.z = FACE_Z + 0.003
     reverse.add(dial)
 
-    const chapterEdgeGeometry = track.geo(new THREE.TorusGeometry(0.858, 0.009, 8, 180))
+    const chapterEdgeGeometry = track.geo(new THREE.TorusGeometry(0.758, 0.009, 8, 180))
     const chapterEdge = new THREE.Mesh(chapterEdgeGeometry, gold)
     chapterEdge.position.z = FACE_Z + 0.014
     chapterEdge.scale.z = 0.6
@@ -538,16 +567,20 @@ export default function KlythCoin() {
     outerRail.scale.z = 0.5
     reverse.add(outerRail)
 
-    // Minute and hour ticks, standing proud of the chapter ring.
+    // Minute and hour ticks, standing proud of the chapter ring. The four
+    // minors between numerals stay short so the hour marks keep the rhythm.
+    // Every tick is anchored on the outer chapter circle (the torus added
+    // above at radius 1.135) and grows inward, so its tip meets the ring.
+    const TICK_OUTER = 1.135
     const tickGeometry = track.geo(new THREE.BoxGeometry(1, 1, 1))
     const tickMatrix = new THREE.Object3D()
     const ticks = new THREE.InstancedMesh(tickGeometry, goldBright, 60)
     for (let i = 0; i < 60; i += 1) {
       const angle = (i / 60) * TAU
       const major = i % 5 === 0
-      const length = major ? 0.085 : 0.046
+      const length = major ? 0.085 : 0.028
       const width = major ? 0.021 : 0.01
-      const radius = 1.11 - length / 2
+      const radius = TICK_OUTER - length / 2
       tickMatrix.position.set(
         Math.sin(angle) * radius,
         Math.cos(angle) * radius,
@@ -584,8 +617,8 @@ export default function KlythCoin() {
     const numerals = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII']
     const unitBar = new THREE.BoxGeometry(1, 1, 1)
     const numeralParts: THREE.BufferGeometry[] = []
-    const numeralHeight = 0.165
-    const numeralRadius = 0.97
+    const numeralHeight = 0.130
+    const numeralRadius = 0.90
     const glyphGap = 0.13
     const quaternion = new THREE.Quaternion()
     const zAxis = new THREE.Vector3(0, 0, 1)
@@ -927,6 +960,17 @@ export default function KlythCoin() {
 
     // -------------------------------------------------------------------- loop --
     const clock = new THREE.Clock()
+
+    // The dial follows the visitor's wall clock. Start on the device zone so
+    // the hands are already right, then swap in the IP-resolved zone once the
+    // geo lookup lands (usually a few hundred milliseconds).
+    let timeZone = deviceTimeZone()
+    void resolveVisitorTimeZone().then((resolved) => {
+      if (!disposed) {
+        timeZone = resolved
+      }
+    })
+
     let elapsed = 0
     let spin = 0.4
     let tiltX = 0
@@ -945,14 +989,14 @@ export default function KlythCoin() {
       const delta = Math.min(clock.getDelta(), 0.05)
       elapsed += delta
 
-      // Real time, smooth mechanical sweep.
-      const now = Date.now() / 1000
-      const seconds = now % 60
-      const minutes = (now / 60) % 60
-      const hours = (now / 3600) % 12
+      // Visitor's local time, smooth mechanical sweep.
+      const { hours, minutes, seconds } = readClock(timeZone)
       hourPivot.rotation.z = -(hours / 12) * TAU
       minutePivot.rotation.z = -(minutes / 60) * TAU
       secondPivot.rotation.z = -(seconds / 60) * TAU
+
+      // The front medallion turns on its own axis while the coin spins.
+      logoPlane.rotation.z = elapsed * 0.45
 
       const introProgress = Math.min(1, (performance.now() - introStart) / 1400)
       const eased = 1 - Math.pow(1 - introProgress, 3)
