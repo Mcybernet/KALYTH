@@ -100,11 +100,12 @@ function scheduleRequest<T>(
 async function sendRequest<T>(
   method: string,
   params: unknown[],
-  signal?: AbortSignal,
+  signal: AbortSignal | undefined,
+  maxAttempts: number,
 ): Promise<T> {
   let lastError: unknown = new RpcRequestError('RPC request failed', true)
 
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     if (signal?.aborted) {
       throw abortError()
     }
@@ -151,7 +152,7 @@ async function sendRequest<T>(
       }
     }
 
-    if (attempt < MAX_ATTEMPTS - 1) {
+    if (attempt < maxAttempts - 1) {
       await sleep(backoffDelay(attempt), signal)
     }
   }
@@ -166,10 +167,20 @@ async function sendRequest<T>(
  * retry/backoff for rate limits. Uses plain `fetch` so it works for
  * `jsonParsed` responses that web3.js rejects.
  */
+export type RpcRequestOptions = {
+  /** Lower this for optional scans where a slow retry would block the page. */
+  maxAttempts?: number
+}
+
 export function rpcRequest<T>(
   method: string,
   params: unknown[],
   signal?: AbortSignal,
+  options: RpcRequestOptions = {},
 ): Promise<T> {
-  return scheduleRequest(() => sendRequest<T>(method, params, signal), signal)
+  const maxAttempts = options.maxAttempts ?? MAX_ATTEMPTS
+  return scheduleRequest(
+    () => sendRequest<T>(method, params, signal, maxAttempts),
+    signal,
+  )
 }

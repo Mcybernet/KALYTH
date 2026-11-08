@@ -2,10 +2,16 @@ import { useMemo } from 'react'
 import { ExternalLink, Info, RefreshCw } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { WalletBubbleMap } from '../components/WalletBubbleMap'
+import { useHolderTransfers } from '../hooks/useHolderTransfers'
 import { useOhlcSnapshot } from '../hooks/useOhlcSnapshot'
 import { useTokenHolders } from '../hooks/useTokenHolders'
 import { explorerAddressUrl, shortenAddress } from '../lib/addresses'
-import { formatHolderPercent, type HolderRole } from '../lib/holders'
+import {
+  formatHolderPercent,
+  HOLDER_TIERS,
+  holderTier,
+  type HolderRole,
+} from '../lib/holders'
 
 const roleBadges: Record<HolderRole, string> = {
   burn: 'badge--danger',
@@ -17,6 +23,7 @@ const roleBadges: Record<HolderRole, string> = {
 
 export function WalletTrackerPage() {
   const { snapshot, loading, refreshing, error, refresh } = useTokenHolders()
+  const transfers = useHolderTransfers(snapshot)
   const ohlc = useOhlcSnapshot()
 
   // The published trade snapshot covers full history, so the curves are counted
@@ -41,6 +48,18 @@ export function WalletTrackerPage() {
     )
     .reduce((sum, holder) => sum + holder.percent, 0)
 
+  const tierCounts = useMemo(
+    () =>
+      HOLDER_TIERS.map((tier) => ({
+        tier,
+        count: holders.filter((holder) => holder.tier === tier.key).length,
+      })),
+    [holders],
+  )
+
+  const walletLinks =
+    transfers.graph?.edges.filter((edge) => edge.kind === 'wallet').length ?? 0
+
   const statusBadge = error
     ? { className: 'badge--danger', text: 'Error' }
     : loading
@@ -52,7 +71,7 @@ export function WalletTrackerPage() {
       <PageHeader
         kicker="Wallet tracker"
         title="KLYTH holder map"
-        description="Every wallet that holds KLYTH, sized by its share of the live supply. Links follow each wallet's buy/sell activity against the bonding curve."
+        description="Every wallet that holds KLYTH, sized by its share of the live supply and bucketed into holder tiers. Links replay parsed Devnet transfer transactions to expose trader clusters."
         actions={
           <>
             <span className={`badge ${statusBadge.className}`}>{statusBadge.text}</span>
@@ -121,12 +140,22 @@ export function WalletTrackerPage() {
           <div>
             <h3 className="card__title">Holder bubble map</h3>
             <p className="card__description">
-              Bubble area tracks each wallet&apos;s share of supply. Edge thickness follows
-              the wallet&apos;s buy/sell count against the curve.
+              Bubble area tracks each wallet&apos;s share of supply. Solid links are parsed
+              wallet-to-wallet SPL transfers; dashed links are bonding-curve flows.
             </p>
           </div>
           <div className="card__actions">
-            <span className="badge badge--devnet">getProgramAccounts</span>
+            <span className={`badge ${transfers.error ? 'badge--warning' : 'badge--devnet'}`}>
+              {transfers.scanning
+                ? 'Scanning transfers…'
+                : transfers.graph
+                  ? walletLinks > 0
+                    ? `${walletLinks} wallet link${walletLinks === 1 ? '' : 's'}`
+                    : `${transfers.graph.edges.length} curve flow${
+                        transfers.graph.edges.length === 1 ? '' : 's'
+                      }`
+                  : 'Transfer scan'}
+            </span>
             {snapshot ? (
               <span className="data-meta">
                 Updated {new Date(snapshot.fetchedAt).toLocaleTimeString()}
@@ -164,7 +193,25 @@ export function WalletTrackerPage() {
             </p>
           </div>
         ) : (
-          <WalletBubbleMap holders={holders} tradeCounts={tradeCounts} />
+          <>
+            <WalletBubbleMap
+              holders={holders}
+              tradeCounts={tradeCounts}
+              decimals={snapshot?.decimals ?? 6}
+              graph={transfers.graph}
+              scanning={transfers.scanning}
+              scanError={transfers.error}
+              progress={transfers.progress}
+              onRefreshTransfers={transfers.refresh}
+            />
+            {transfers.error ? (
+              <p className="wallet-map__scan-error">
+                Transfer replay hit a Devnet rate limit. The map keeps the holder
+                bubbles and any partial links already parsed — retry from the map
+                controls.
+              </p>
+            ) : null}
+          </>
         )}
       </section>
 
@@ -173,8 +220,8 @@ export function WalletTrackerPage() {
           <div>
             <h3 className="card__title">Holders by share of supply</h3>
             <p className="card__description">
-              Balances are aggregated per owner. Percentages use the current on-chain
-              supply as the denominator.
+              Balances are aggregated per owner and bucketed by KLYTH holding size.
+              Percentages use the current on-chain supply as the denominator.
             </p>
           </div>
           <span className="badge badge--devnet">{holders.length} owners</span>
@@ -187,7 +234,26 @@ export function WalletTrackerPage() {
             </p>
           </div>
         ) : (
-          <div className="table-wrap">
+          <>
+            <div className="holder-tiers" aria-label="Holder tier classification">
+              {tierCounts.map(({ tier, count }) => (
+                <span
+                  key={tier.key}
+                  className={`holder-tier holder-tier--${tier.key}${count === 0 ? ' is-empty' : ''}`}
+                  title={tier.rangeLabel}
+                >
+                  <span className="holder-tier__emoji" aria-hidden="true">
+                    {tier.emoji}
+                  </span>
+                  <span className="holder-tier__label">{tier.label}</span>
+                  <strong className="holder-tier__count">{count}</strong>
+                </span>
+              ))}
+              <span className="holder-tiers__note">
+                Tiers by total KLYTH balance, protocol wallets included.
+              </span>
+            </div>
+            <div className="table-wrap">
             <table className="data-table wallets-table">
               <caption className="sr-only">KLYTH holders ranked by balance</caption>
               <thead>
@@ -195,6 +261,7 @@ export function WalletTrackerPage() {
                   <th scope="col">#</th>
                   <th scope="col">Holder</th>
                   <th scope="col">Role</th>
+                  <th scope="col">Tier</th>
                   <th scope="col" className="data-table__num">
                     Balance
                   </th>
@@ -208,6 +275,7 @@ export function WalletTrackerPage() {
               <tbody>
                 {holders.map((holder, index) => {
                   const trades = tradeCounts.get(holder.owner) ?? 0
+                  const tier = holderTier(holder.tier)
 
                   return (
                     <tr key={holder.owner}>
@@ -229,6 +297,17 @@ export function WalletTrackerPage() {
                       <td>
                         <span className={`badge ${roleBadges[holder.role]}`}>
                           {holder.role === 'wallet' ? 'Holder' : holder.label}
+                        </span>
+                      </td>
+                      <td>
+                        <span
+                          className={`holder-tier holder-tier--${holder.tier}`}
+                          title={tier.rangeLabel}
+                        >
+                          <span className="holder-tier__emoji" aria-hidden="true">
+                            {tier.emoji}
+                          </span>
+                          <span className="holder-tier__label">{tier.label}</span>
                         </span>
                       </td>
                       <td className="data-table__num wallets-table__amount">
@@ -266,7 +345,8 @@ export function WalletTrackerPage() {
                 })}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         )}
       </section>
 
@@ -275,11 +355,16 @@ export function WalletTrackerPage() {
         <div>
           <h3 className="card__title">How this map is built</h3>
           <p className="card__description">
-            Holders come from <code>getProgramAccounts</code> on the SPL Token program,
-            filtered by the KLYTH mint and grouped by owner. Percentages are balance ÷
-            current supply. Map links join each wallet to the bonding curve using its
-            buy/sell count in the published trade snapshot — they are not
-            wallet-to-wallet transfers, and nothing is estimated.
+            Holder balances come from <code>getProgramAccounts</code> on the SPL Token
+            program, filtered by the KLYTH mint and grouped by owner. Tier thresholds use
+            the whole-token balance; percentages use balance ÷ current supply. Transfer
+            links come from <code>getSignaturesForAddress</code> plus{' '}
+            <code>getTransaction</code> on the current holders&apos; token accounts. Each
+            edge is derived from SPL token balance deltas inside a successful
+            transaction, so solid wallet-to-wallet lines are real transfers, not
+            estimates. Multi-party transactions and transfers to wallets that no longer
+            hold KLYTH are skipped, and the public Devnet endpoint caps the recent
+            transaction window.
           </p>
         </div>
       </section>

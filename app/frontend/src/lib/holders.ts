@@ -14,6 +14,90 @@ export const TOKEN_PROGRAM_ADDRESS = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5D
 
 export type HolderRole = 'burn' | 'vault' | 'treasury' | 'demo' | 'wallet'
 
+export type HolderTierKey = 'whale' | 'shark' | 'dolphin' | 'fish' | 'crab' | 'shrimp'
+
+export type HolderTier = {
+  key: HolderTierKey
+  emoji: string
+  label: string
+  /** Human-readable KLYTH threshold, not raw token units. */
+  minAmount: number
+  maxAmount: number | null
+  rangeLabel: string
+}
+
+/**
+ * Holder tiers used by the "Holders by share of supply" table. A wallet is
+ * classified by its total KLYTH balance, not by its percentage of supply, so
+ * the same thresholds stay meaningful after future mints or burns.
+ */
+export const HOLDER_TIERS: HolderTier[] = [
+  {
+    key: 'whale',
+    emoji: '🐋',
+    label: 'Whale',
+    minAmount: 1_000_000,
+    maxAmount: null,
+    rangeLabel: '≥ 1,000,000 KLYTH',
+  },
+  {
+    key: 'shark',
+    emoji: '🦈',
+    label: 'Shark',
+    minAmount: 100_000,
+    maxAmount: 1_000_000,
+    rangeLabel: '100,000 – < 1,000,000 KLYTH',
+  },
+  {
+    key: 'dolphin',
+    emoji: '🐬',
+    label: 'Dolphin',
+    minAmount: 50_000,
+    maxAmount: 100_000,
+    rangeLabel: '50,000 – < 100,000 KLYTH',
+  },
+  {
+    key: 'fish',
+    emoji: '🐟',
+    label: 'Fish',
+    minAmount: 10_000,
+    maxAmount: 50_000,
+    rangeLabel: '10,000 – < 50,000 KLYTH',
+  },
+  {
+    key: 'crab',
+    emoji: '🦀',
+    label: 'Crab',
+    minAmount: 1_000,
+    maxAmount: 10_000,
+    rangeLabel: '1,000 – < 10,000 KLYTH',
+  },
+  {
+    key: 'shrimp',
+    emoji: '🦐',
+    label: 'Shrimp',
+    minAmount: 0,
+    maxAmount: 1_000,
+    rangeLabel: '< 1,000 KLYTH',
+  },
+]
+
+const TIER_BY_KEY = new Map(HOLDER_TIERS.map((tier) => [tier.key, tier]))
+
+export function classifyHolder(amountHuman: number): HolderTier {
+  return (
+    HOLDER_TIERS.find(
+      (tier) =>
+        amountHuman >= tier.minAmount &&
+        (tier.maxAmount === null || amountHuman < tier.maxAmount),
+    ) ?? HOLDER_TIERS[HOLDER_TIERS.length - 1]
+  )
+}
+
+export function holderTier(tier: HolderTierKey): HolderTier {
+  return TIER_BY_KEY.get(tier) ?? HOLDER_TIERS[HOLDER_TIERS.length - 1]
+}
+
 export type TokenHolder = {
   /** Wallet that controls the token accounts below. */
   owner: string
@@ -21,9 +105,12 @@ export type TokenHolder = {
   amountRaw: string
   amount: string
   amountNumber: number
+  /** Balance expressed in whole KLYTH (amountRaw ÷ 10^decimals). */
+  amountHuman: number
   percent: number
   role: HolderRole
   label: string
+  tier: HolderTierKey
 }
 
 export type HoldersSnapshot = {
@@ -127,6 +214,7 @@ function aggregate(
   for (const [owner, entry] of byOwner) {
     const amountRaw = entry.amountRaw.toString()
     const amountNumber = Number(amountRaw)
+    const amountHuman = amountNumber / 10 ** supply.decimals
     const { role, label } = roleFor(owner, entry.tokenAccounts)
     holders.push({
       owner,
@@ -134,9 +222,11 @@ function aggregate(
       amountRaw,
       amount: formatTokenAmount(amountRaw, supply.decimals),
       amountNumber,
+      amountHuman,
       percent: supplyNumber > 0 ? (amountNumber / supplyNumber) * 100 : 0,
       role,
       label,
+      tier: classifyHolder(amountHuman).key,
     })
   }
 

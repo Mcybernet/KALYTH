@@ -17,6 +17,7 @@
     "@solana/wallet-adapter-react-ui": "^0.9.40",
     "@solana/web3.js": "^1.99.0",
     "apexcharts": "^8.7.0",
+    "d3-force": "^3.0.1",
     "lightweight-charts": "^5.2.1",
     "lucide-react": "^0.468.0",
     "react": "^19.1.0",
@@ -25,6 +26,7 @@
     "three": "^0.170.0"
   },
   "devDependencies": {
+    "@types/d3-force": "^3.0.10",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@types/three": "^0.170.0",
