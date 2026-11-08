@@ -60,7 +60,10 @@ jobs:
         env:
           DEVNET_RPC_URL: ${{ secrets.DEVNET_RPC_URL }}
         run: |
-          BASE="${{ steps.pages.outputs.base_url }}${{ steps.pages.outputs.base_path }}"
+          # `base_url` already contains the project path for project sites
+          # (for example https://user.github.io/repo); do not append
+          # `base_path` or the path is doubled.
+          BASE="${{ steps.pages.outputs.base_url }}"
           BASE="${BASE%/}"
           node build-ohlc-json.mjs \
             --output ../app/frontend/public/data/klyth-trades.json \
