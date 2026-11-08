@@ -540,6 +540,12 @@ export function BondingCurveChart({
               }`
             : candleSet.candles.length > 0
               ? `${candleSet.candles.length} ${timeframe.label} candles (WIB) from ${candleSet.tradeCount} confirmed trades. Open/close are the first and last real executions in each interval; high/low are the extremes.${
+                  candleSet.filled > 0
+                    ? ` ${candleSet.filled} flat candle${
+                        candleSet.filled === 1 ? '' : 's'
+                      } fill inactive intervals.`
+                    : ''
+                }${
                   candleSet.skipped > 0
                     ? ` ${candleSet.skipped} trade${
                         candleSet.skipped === 1 ? '' : 's'

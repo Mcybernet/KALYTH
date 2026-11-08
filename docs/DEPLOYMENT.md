@@ -251,6 +251,13 @@ node build-ohlc-json.mjs --full  # rescan everything
 `DEVNET_RPC_URL` is honoured here too. The public endpoint works but is slow
 because it rate-limits `getTransaction`; the script retries with backoff.
 
+### Chart behaviour
+
+Candles are bucketed in WIB. Empty intervals between the first and last trade
+are filled with flat candles at the previous close (the most recent 6,000
+buckets per timeframe at most), so small timeframes have no visual holes. The
+chart footer reports how many candles are flat fills rather than real trades.
+
 ### Local build
 
 ```bash

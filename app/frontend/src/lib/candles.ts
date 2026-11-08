@@ -19,6 +19,13 @@ export const TIMEFRAMES: readonly Timeframe[] = [
 const WEEK_OFFSET = 3 * 86_400
 
 /**
+ * Older snapshots can span months. Fill at most this many empty buckets (the
+ * most recent ones) so an old trade never makes the chart generate a huge flat
+ * history. Real candles are always kept.
+ */
+const MAX_FILLED_CANDLES = 6_000
+
+/**
  * WIB is UTC+7 all year (Indonesia has no daylight saving). Candle timestamps
  * are shifted into WIB wall-clock time because lightweight-charts renders
  * UTCTimestamp values in UTC; shifting makes the axis read as local time.
@@ -106,13 +113,18 @@ export function bucketStart(seconds: number, interval: number): number {
 }
 
 /**
- * Aggregates confirmed executions into time-based OHLC candles. Buckets without
- * trades are left out instead of being filled with invented prices.
+ * Aggregates confirmed executions into time-based OHLC candles.
+ *
+ * Empty buckets between the first and last trade are filled with a flat candle
+ * at the previous close so the chart has no holes. Filled candles are not real
+ * executions and are reported separately via `filled`. Set `fillGaps` to false
+ * to keep only buckets that contain a trade.
  */
 export function buildTimeCandles(
   trades: CandleTrade[],
   interval: number,
-): { candles: TimeCandle[]; tradeCount: number; skipped: number } {
+  fillGaps = true,
+): { candles: TimeCandle[]; tradeCount: number; skipped: number; filled: number } {
   const usable = trades
     .map((trade, index) => ({ trade, index }))
     .filter(
@@ -150,10 +162,51 @@ export function buildTimeCandles(
     }
   }
 
+  const times = [...byBucket.keys()].sort((left, right) => left - right)
+  let filled = 0
+  const candles: TimeCandle[] = []
+
+  if (!fillGaps || times.length < 2) {
+    for (const time of times) {
+      candles.push(byBucket.get(time) as TimeCandle)
+    }
+  } else {
+    const firstTime = times[0]
+    const lastTime = times[times.length - 1]
+    const bucketCount = Math.floor((lastTime - firstTime) / interval) + 1
+    // When the history is too long, fill only the newest window. The loop below
+    // starts at `fillFrom`, so it never walks the discarded buckets.
+    const fillFrom =
+      bucketCount > MAX_FILLED_CANDLES
+        ? lastTime - (MAX_FILLED_CANDLES - 1) * interval
+        : firstTime
+
+    let previous: TimeCandle | null = null
+    for (const time of times) {
+      const candle = byBucket.get(time) as TimeCandle
+      if (previous && time > previous.time) {
+        const start = Math.max(previous.time + interval, fillFrom)
+        for (let empty = start; empty < time && filled < MAX_FILLED_CANDLES; empty += interval) {
+          candles.push({
+            time: empty,
+            open: previous.close,
+            high: previous.close,
+            low: previous.close,
+            close: previous.close,
+          })
+          filled += 1
+        }
+      }
+      candles.push(candle)
+      previous = candle
+    }
+  }
+
   return {
-    candles: Array.from(byBucket.values()).sort((left, right) => left.time - right.time),
+    candles,
     tradeCount: usable.length,
     skipped: trades.length - usable.length,
+    filled,
   }
 }
 
