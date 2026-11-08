@@ -13,6 +13,7 @@ import './styles/pages.css'
 import './styles/preview.css'
 import './styles/portal.css'
 import './styles/minimal.css'
+import './styles/wallets.css'
 import '@solana/wallet-adapter-react-ui/styles.css'
 
 const ENDPOINT = 'https://api.devnet.solana.com'

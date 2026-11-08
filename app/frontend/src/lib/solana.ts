@@ -27,7 +27,7 @@ type TokenAmountResult = {
  * Formats a raw token amount as a grouped decimal string without going through
  * `Number`, so large supplies keep every digit.
  */
-function formatTokenAmount(raw: string, decimals: number): string {
+export function formatTokenAmount(raw: string, decimals: number): string {
   const negative = raw.startsWith('-')
   const digits = negative ? raw.slice(1) : raw
   const padded = digits.padStart(decimals + 1, '0')

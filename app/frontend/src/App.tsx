@@ -14,6 +14,7 @@ import { DocumentationPage } from './pages/DocumentationPage'
 import { OverviewPage } from './pages/OverviewPage'
 import { TokenomicsPage } from './pages/TokenomicsPage'
 import { TradePage } from './pages/TradePage'
+import { WalletTrackerPage } from './pages/WalletTrackerPage'
 
 function renderPage(active: string) {
   switch (active) {
@@ -27,6 +28,8 @@ function renderPage(active: string) {
       return <BurnTrackerPage />
     case 'activity':
       return <ActivityPage />
+    case 'wallets':
+      return <WalletTrackerPage />
     case 'about':
       return <AboutPage />
     case 'documentation':

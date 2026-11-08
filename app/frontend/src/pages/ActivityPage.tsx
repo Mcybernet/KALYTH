@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { RefreshCw } from 'lucide-react'
+import { Network, RefreshCw } from 'lucide-react'
 import { ActivityTable } from '../components/ActivityTable'
 import { PageHeader } from '../components/PageHeader'
 import { useActivity } from '../hooks/useActivity'
 import { useOhlcSnapshot } from '../hooks/useOhlcSnapshot'
 import type { ActivityKind } from '../lib/history'
+import { useNavigation } from '../lib/navigation'
 
 const filters = ['All', 'Buy', 'Sell', 'Burn'] as const
 type Filter = (typeof filters)[number]
@@ -19,6 +20,7 @@ const PAGE_SIZE = 10
 const ACTIVITY_POLL_MS = 20_000
 
 export function ActivityPage() {
+  const { navigate } = useNavigation()
   const [activeFilter, setActiveFilter] = useState<Filter>('All')
   const [query, setQuery] = useState('')
   // The shipped snapshot already contains most signatures, so the ledger paints
@@ -53,11 +55,21 @@ export function ActivityPage() {
         title="On-chain transaction ledger"
         description="Buy, Sell, and Burn transactions verified on Solana Devnet. Search and filters apply to the transactions already loaded in this view."
         actions={
-          <span
-            className={`badge ${error ? 'badge--danger' : loading ? 'badge--neutral' : 'badge--success'}`}
-          >
-            {error ? 'Error' : loading ? 'Loading…' : 'Live'}
-          </span>
+          <>
+            <span
+              className={`badge ${error ? 'badge--danger' : loading ? 'badge--devnet' : 'badge--success'}`}
+            >
+              {error ? 'Error' : loading ? 'Loading…' : 'Live'}
+            </span>
+            <button
+              type="button"
+              className="btn btn--secondary btn--sm"
+              onClick={() => navigate('wallets')}
+            >
+              <Network size={14} aria-hidden="true" />
+              Wallet map
+            </button>
+          </>
         }
       />
 
@@ -71,7 +83,7 @@ export function ActivityPage() {
           </div>
           <div className="card__actions">
             <span
-              className={`badge ${error ? 'badge--danger' : loading ? 'badge--neutral' : 'badge--success'}`}
+              className={`badge ${error ? 'badge--danger' : loading ? 'badge--devnet' : 'badge--success'}`}
             >
               {error ? 'Error' : loading ? 'Loading…' : 'Live'}
             </span>

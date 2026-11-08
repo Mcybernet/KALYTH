@@ -16,6 +16,7 @@ const primaryItems = [
   { id: 'tokenomics', label: 'Tokenomics' },
   { id: 'burn', label: 'Burn Tracker' },
   { id: 'activity', label: 'Activity' },
+  { id: 'wallets', label: 'Wallets' },
   { id: 'about', label: 'About' },
   { id: 'documentation', label: 'Docs' },
 ]

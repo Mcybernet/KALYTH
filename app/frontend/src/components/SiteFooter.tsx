@@ -24,6 +24,7 @@ const columns = [
     title: 'On-chain',
     links: [
       { id: 'activity', label: 'Activity' },
+      { id: 'wallets', label: 'Wallet map' },
       { id: 'burn', label: 'Burn Tracker' },
       { id: 'documentation', label: 'Documentation' },
     ],

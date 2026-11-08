@@ -1,0 +1,338 @@
+/* ==========================================================================
+   Wallet tracker — holder bubble map and share table
+   ========================================================================== */
+
+.wallet-map {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.wallet-map__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.wallet-map__legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.wallet-map__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+}
+
+.wallet-map__legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.wallet-map__hint {
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.02em;
+}
+
+.wallet-map__canvas {
+  position: relative;
+  overflow: hidden;
+  border: var(--border-subtle);
+  background: rgba(5, 5, 6, 0.55);
+}
+
+.wallet-map__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 380px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.wallet-map__svg--dragging {
+  cursor: grabbing;
+}
+
+.wallet-map__grid-line {
+  fill: none;
+  stroke: rgba(140, 133, 120, 0.1);
+  stroke-width: 1;
+}
+
+.wallet-map__orbit {
+  fill: none;
+  stroke: rgba(var(--color-primary-rgb), 0.1);
+  stroke-width: 1;
+  stroke-dasharray: 4 8;
+}
+
+.wallet-map__edge {
+  fill: none;
+  stroke-linecap: round;
+  transition: stroke-opacity var(--transition-fast);
+}
+
+.wallet-map__hub-disc {
+  fill: var(--color-surface);
+  stroke: rgba(var(--color-primary-rgb), 0.55);
+  stroke-width: 1.5;
+}
+
+.wallet-map__hub-ring {
+  fill: none;
+  stroke: rgba(var(--color-primary-rgb), 0.28);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
+.wallet-map__hub-title {
+  fill: var(--color-text);
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.14em;
+  text-anchor: middle;
+}
+
+.wallet-map__hub-sub {
+  fill: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: 7px;
+  letter-spacing: 0.16em;
+  text-anchor: middle;
+}
+
+.wallet-map__node {
+  cursor: pointer;
+  outline: none;
+}
+
+.wallet-map__node:focus-visible {
+  filter: drop-shadow(0 0 5px rgba(var(--color-primary-rgb), 0.9));
+}
+
+.wallet-map__bubble-percent {
+  fill: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: var(--weight-semibold);
+  pointer-events: none;
+  text-anchor: middle;
+}
+
+.wallet-map__bubble-percent--outside {
+  fill: var(--color-text-secondary);
+  font-size: 10px;
+}
+
+.wallet-map__bubble-label {
+  fill: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  text-anchor: middle;
+}
+
+.wallet-map__controls {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px;
+  border: var(--border-subtle);
+  background: rgba(5, 5, 6, 0.78);
+}
+
+.wallet-map__details {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 56px;
+  padding: var(--space-3);
+  border: var(--border-subtle);
+  background: rgba(10, 10, 12, 0.7);
+}
+
+.wallet-map__detail-swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.wallet-map__detail-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.wallet-map__detail-address {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  word-break: break-all;
+}
+
+.wallet-map__detail-address:hover {
+  color: var(--color-accent-light);
+}
+
+.wallet-map__detail-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-left: auto;
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+}
+
+.wallet-map__detail-stats strong {
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-weight: var(--weight-semibold);
+}
+
+/* ------------------------------------------------------------- Holder table */
+
+.wallets-table {
+  min-width: 880px;
+}
+
+.wallets-table__rank {
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+}
+
+.wallets-table__holder {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wallets-table__label {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.wallets-table__address {
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.wallets-table__address:hover {
+  color: var(--color-accent-light);
+}
+
+.wallets-table__amount {
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.holder-share {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 170px;
+}
+
+.holder-share__track {
+  flex: 1;
+  height: 8px;
+  overflow: hidden;
+  background: rgba(156, 148, 136, 0.14);
+}
+
+.holder-share__fill {
+  display: block;
+  height: 100%;
+  background: var(--color-primary);
+}
+
+.holder-share__fill--burn {
+  background: var(--color-danger);
+}
+
+.holder-share__fill--vault {
+  background: var(--color-success);
+}
+
+.holder-share__fill--treasury {
+  background: var(--color-warning);
+}
+
+.holder-share__fill--demo {
+  background: var(--color-silver);
+}
+
+.holder-share__value {
+  min-width: 54px;
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-align: right;
+}
+
+/* -------------------------------------------------------------- Data source */
+
+.holder-source {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.holder-source > svg {
+  flex: none;
+  margin-top: 3px;
+  color: var(--color-accent-light);
+}
+
+.holder-source code {
+  padding: 1px 4px;
+  background: rgba(var(--color-primary-rgb), 0.08);
+  color: var(--color-accent-light);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.card__actions .data-meta {
+  margin-top: 0;
+}
+
+.is-spinning {
+  animation: spin 900ms linear infinite;
+}
+
+@media (max-width: 720px) {
+  .wallet-map__svg {
+    min-height: 300px;
+  }
+
+  .wallet-map__hint {
+    display: none;
+  }
+
+  .wallet-map__detail-stats {
+    margin-left: 0;
+  }
+}
