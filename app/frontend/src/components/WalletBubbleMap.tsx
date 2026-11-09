@@ -141,6 +141,28 @@ function hashString(value: string): number {
   return hash >>> 0
 }
 
+/**
+ * Deterministic idle drift: same wallet always floats along the same path, so
+ * the layout stays stable across renders and only the phase changes.
+ */
+function driftOffset(
+  owner: string,
+  radius: number,
+  phaseMs: number,
+): { x: number; y: number } {
+  const t = phaseMs / 1000
+  const seed = (hashString(owner) / 4294967295) * Math.PI * 2
+  const amplitude = 3.5 + radius * 0.07
+  return {
+    x:
+      Math.cos(t * 0.38 + seed) * amplitude +
+      Math.cos(t * 0.91 + seed * 1.7) * amplitude * 0.2,
+    y:
+      Math.sin(t * 0.31 + seed * 1.3) * amplitude * 0.85 +
+      Math.sin(t * 0.73 + seed) * amplitude * 0.18,
+  }
+}
+
 function parseHex(color: string): [number, number, number] {
   const raw = color.replace('#', '')
   const expanded =
@@ -483,6 +505,7 @@ export function WalletBubbleMap({
   const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null)
   const [view, setView] = useState<ViewState>({ x: 0, y: 0, scale: 1 })
   const [motionPhase, setMotionPhase] = useState(0)
+  const [draggingOwner, setDraggingOwner] = useState<string | null>(null)
   const [dragOffsets, setDragOffsets] = useState<
     Record<string, { x: number; y: number }>
   >({})
@@ -492,6 +515,16 @@ export function WalletBubbleMap({
   const animationRef = useRef<number | null>(null)
   const suppressClickRef = useRef(false)
   const autoShiftedRef = useRef(false)
+  const motionPhaseRef = useRef(0)
+  const draggingOwnerRef = useRef<string | null>(null)
+  const displayNodesRef = useRef<LayoutNode[]>([])
+  const reactionRef = useRef<{
+    owner: string
+    x: number
+    y: number
+    radius: number
+    strength: number
+  } | null>(null)
   const dragRef = useRef<{
     pointerId: number
     startX: number
@@ -502,6 +535,16 @@ export function WalletBubbleMap({
     nodeOwner: string | null
     nodeOriginX: number
     nodeOriginY: number
+    nodeX: number
+    nodeY: number
+  } | null>(null)
+  const settleRef = useRef<{
+    owner: string
+    fromX: number
+    fromY: number
+    toX: number
+    toY: number
+    progress: number
   } | null>(null)
 
   const layout = useMemo(
@@ -518,6 +561,28 @@ export function WalletBubbleMap({
     const step = (now: number) => {
       if (now - last >= 33) {
         last = now
+        motionPhaseRef.current = now
+        const reaction = reactionRef.current
+        if (reaction) {
+          // Ramp the neighbour push up while dragging, then ease it back so
+          // released bubbles settle instead of snapping.
+          const target = draggingOwnerRef.current === reaction.owner ? 1 : 0
+          reaction.strength += (target - reaction.strength) * 0.22
+          if (reaction.strength < 0.02) reactionRef.current = null
+        }
+        const settle = settleRef.current
+        if (settle) {
+          settle.progress = Math.min(1, settle.progress + 0.14)
+          const k = 1 - Math.pow(1 - settle.progress, 3)
+          setDragOffsets((current) => ({
+            ...current,
+            [settle.owner]: {
+              x: settle.fromX + (settle.toX - settle.fromX) * k,
+              y: settle.fromY + (settle.toY - settle.fromY) * k,
+            },
+          }))
+          if (settle.progress >= 1) settleRef.current = null
+        }
         setMotionPhase(now)
       }
       frame = requestAnimationFrame(step)
@@ -527,27 +592,56 @@ export function WalletBubbleMap({
   }, [])
 
   const displayNodes = useMemo(() => {
-    const t = motionPhase / 1000
-    return layout.nodes.map((node) => {
+    const positioned = layout.nodes.map((node) => {
       const owner = node.holder.owner
       const offset = dragOffsets[owner] ?? { x: 0, y: 0 }
-      const seed = (hashString(owner) / 4294967295) * Math.PI * 2
-      const amplitude = 3.5 + node.radius * 0.07
+      if (owner === draggingOwner) {
+        // Freeze drift under the pointer so the bubble tracks the cursor
+        // exactly while it is being dragged.
+        return { ...node, x: node.x + offset.x, y: node.y + offset.y }
+      }
+      const drift = driftOffset(owner, node.radius, motionPhase)
       return {
         ...node,
-        x:
-          node.x +
-          offset.x +
-          Math.cos(t * 0.38 + seed) * amplitude +
-          Math.cos(t * 0.91 + seed * 1.7) * amplitude * 0.2,
-        y:
-          node.y +
-          offset.y +
-          Math.sin(t * 0.31 + seed * 1.3) * amplitude * 0.85 +
-          Math.sin(t * 0.73 + seed) * amplitude * 0.18,
+        x: node.x + offset.x + drift.x,
+        y: node.y + offset.y + drift.y,
       }
     })
-  }, [layout, dragOffsets, motionPhase])
+
+    const reaction = reactionRef.current
+    if (!reaction || reaction.strength <= 0.02) return positioned
+
+    // Other bubbles gently make room while a neighbour is dragged.
+    return positioned.map((node) => {
+      if (node.holder.owner === reaction.owner) return node
+      const dx = node.x - reaction.x
+      const dy = node.y - reaction.y
+      const distance = Math.hypot(dx, dy)
+      if (distance < 0.001) return node
+      const influence = node.radius + reaction.radius + 72
+      const soft =
+        Math.pow(Math.max(0, 1 - distance / influence), 2) *
+        20 *
+        reaction.strength
+      // Hard floor so a bubble dragged straight into a neighbour cannot
+      // overlap it while the push ramps up.
+      const collision =
+        Math.max(0, node.radius + reaction.radius + 8 - distance) *
+        reaction.strength
+      const push = Math.max(soft, collision)
+      if (push < 0.05) return node
+      return {
+        ...node,
+        x: node.x + (dx / distance) * push,
+        y: node.y + (dy / distance) * push,
+      }
+    })
+  }, [layout, dragOffsets, draggingOwner, motionPhase])
+
+  useEffect(() => {
+    displayNodesRef.current = displayNodes
+  }, [displayNodes])
+
 
   const displayEdges = useMemo(
     () => buildPlacedEdges(displayNodes, graph?.edges ?? [], graph, decimals),
@@ -580,17 +674,22 @@ export function WalletBubbleMap({
     }
   }
 
-  function animateView(target: ViewState, duration = 720) {
+  function animateView(
+    target: ViewState,
+    duration = 720,
+    follow?: () => ViewState | null,
+  ) {
     cancelViewAnimation()
     const from = viewRef.current
     const start = performance.now()
     const step = () => {
       const t = Math.min(1, (performance.now() - start) / duration)
       const k = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+      const current = follow?.() ?? target
       commitView({
-        x: from.x + (target.x - from.x) * k,
-        y: from.y + (target.y - from.y) * k,
-        scale: from.scale + (target.scale - from.scale) * k,
+        x: from.x + (current.x - from.x) * k,
+        y: from.y + (current.y - from.y) * k,
+        scale: from.scale + (current.scale - from.scale) * k,
       })
       if (t < 1) {
         animationRef.current = requestAnimationFrame(step)
@@ -707,7 +806,7 @@ export function WalletBubbleMap({
   // Selection drives map emphasis; hover only drives the tooltip so the map
   // never dims just because the pointer crossed a bubble.
   const selectionOwner = lockedOwner ?? selected
-  const tooltipOwner = hovered ?? selectionOwner
+  const tooltipOwner = dragging ? null : hovered ?? selectionOwner
   const activeNode =
     layout.nodes.find((node) => node.holder.owner === tooltipOwner) ?? null
   const activeTrades = activeNode ? (tradeCounts.get(activeNode.holder.owner) ?? 0) : 0
@@ -842,16 +941,22 @@ export function WalletBubbleMap({
   function focusOwner(owner: string) {
     const node = layout.nodes.find((item) => item.holder.owner === owner)
     if (!node) return
-    const offset = dragOffsets[owner] ?? { x: 0, y: 0 }
     const scale = node.radius >= 44 ? 1.18 : 1.36
-    animateView(
-      {
+    // Keep the focused bubble centred while drift is still moving it.
+    const follow = () => {
+      const live = displayNodesRef.current.find(
+        (item) => item.holder.owner === owner,
+      )
+      if (!live) return null
+      return {
         scale,
-        x: WIDTH / 2 - (node.x + offset.x) * scale,
-        y: HEIGHT / 2 - (node.y + offset.y) * scale,
-      },
-      760,
-    )
+        x: WIDTH / 2 - live.x * scale,
+        y: HEIGHT / 2 - live.y * scale,
+      }
+    }
+    const target = follow()
+    if (!target) return
+    animateView(target, 760, follow)
   }
 
   function resetMap() {
@@ -860,6 +965,10 @@ export function WalletBubbleMap({
     setSelectedEdge(null)
     setHovered(null)
     setHoveredEdge(null)
+    setDraggingOwner(null)
+    draggingOwnerRef.current = null
+    reactionRef.current = null
+    settleRef.current = null
     setDragOffsets({})
     animateView({ x: 0, y: 0, scale: 1 }, 640)
   }
@@ -890,9 +999,56 @@ export function WalletBubbleMap({
     }
   }
 
+  function resolveDropOffset(
+    owner: string,
+    x: number,
+    y: number,
+  ): { x: number; y: number } {
+    const node = layout.nodes.find((item) => item.holder.owner === owner)
+    if (!node) return { x, y }
+    const resolved = { x, y }
+    // Nudge the dropped bubble out of any overlap so releasing it on top of a
+    // neighbour does not leave two bubbles stacked forever.
+    for (let pass = 0; pass < 8; pass += 1) {
+      let moved = false
+      for (const other of layout.nodes) {
+        if (other.holder.owner === owner) continue
+        const otherOffset = dragOffsets[other.holder.owner] ?? { x: 0, y: 0 }
+        const drift = driftOffset(
+          other.holder.owner,
+          other.radius,
+          motionPhaseRef.current,
+        )
+        const otherX = other.x + otherOffset.x + drift.x
+        const otherY = other.y + otherOffset.y + drift.y
+        const centerX = node.x + resolved.x
+        const centerY = node.y + resolved.y
+        let dx = centerX - otherX
+        let dy = centerY - otherY
+        const distance = Math.hypot(dx, dy)
+        const minimum = node.radius + other.radius + 8
+        if (distance >= minimum) continue
+        if (distance < 0.001) {
+          dx = 1
+          dy = 0
+        }
+        const length = Math.hypot(dx, dy) || 1
+        resolved.x += (dx / length) * (minimum - distance)
+        resolved.y += (dy / length) * (minimum - distance)
+        moved = true
+      }
+      if (!moved) break
+    }
+    const margin = node.radius + 10
+    resolved.x = clamp(resolved.x, margin - node.x, WIDTH - margin - node.x)
+    resolved.y = clamp(resolved.y, margin - node.y, HEIGHT - margin - node.y)
+    return resolved
+  }
+
   function handlePointerDown(event: ReactPointerEvent<SVGSVGElement>) {
     if (event.button !== 0) return
     cancelViewAnimation()
+    settleRef.current = null
     const target = event.target as Element | null
     const nodeOwner =
       target?.closest('.wallet-map__node')?.getAttribute('data-owner') ?? null
@@ -904,6 +1060,17 @@ export function WalletBubbleMap({
     const rect = event.currentTarget.getBoundingClientRect()
     const start = svgPoint(event.clientX, event.clientY, rect)
     const existingOffset = nodeOwner ? dragOffsets[nodeOwner] : null
+    const node = nodeOwner
+      ? layout.nodes.find((item) => item.holder.owner === nodeOwner)
+      : null
+    // Bake the current drift into the drag origin so freezing the idle motion
+    // does not make the bubble jump on pointerdown.
+    const drift =
+      nodeOwner && node
+        ? driftOffset(nodeOwner, node.radius, motionPhaseRef.current)
+        : { x: 0, y: 0 }
+    const originX = (existingOffset?.x ?? 0) + drift.x
+    const originY = (existingOffset?.y ?? 0) + drift.y
     dragRef.current = {
       pointerId: event.pointerId,
       startX: start.x,
@@ -912,8 +1079,22 @@ export function WalletBubbleMap({
       originY: viewRef.current.y,
       moved: false,
       nodeOwner,
-      nodeOriginX: existingOffset?.x ?? 0,
-      nodeOriginY: existingOffset?.y ?? 0,
+      nodeOriginX: originX,
+      nodeOriginY: originY,
+      nodeX: originX,
+      nodeY: originY,
+    }
+    if (nodeOwner && node) {
+      setDraggingOwner(nodeOwner)
+      draggingOwnerRef.current = nodeOwner
+      setHovered(null)
+      reactionRef.current = {
+        owner: nodeOwner,
+        x: node.x + originX,
+        y: node.y + originY,
+        radius: node.radius,
+        strength: reactionRef.current?.strength ?? 0,
+      }
     }
     setDragging(true)
   }
@@ -939,27 +1120,35 @@ export function WalletBubbleMap({
       if (!node) return
       const scale = viewRef.current.scale || 1
       const margin = node.radius + 10
+      const nextX = clamp(
+        drag.nodeOriginX + deltaX / scale,
+        margin - node.x,
+        WIDTH - margin - node.x,
+      )
+      const nextY = clamp(
+        drag.nodeOriginY + deltaY / scale,
+        margin - node.y,
+        HEIGHT - margin - node.y,
+      )
+      reactionRef.current = {
+        owner: drag.nodeOwner,
+        x: node.x + nextX,
+        y: node.y + nextY,
+        radius: node.radius,
+        strength: reactionRef.current?.strength ?? 0,
+      }
+      drag.nodeX = nextX
+      drag.nodeY = nextY
       setDragOffsets((currentOffsets) => ({
         ...currentOffsets,
-        [drag.nodeOwner as string]: {
-          x: clamp(
-            drag.nodeOriginX + deltaX / scale,
-            margin - node.x,
-            WIDTH - margin - node.x,
-          ),
-          y: clamp(
-            drag.nodeOriginY + deltaY / scale,
-            margin - node.y,
-            HEIGHT - margin - node.y,
-          ),
-        },
+        [drag.nodeOwner as string]: { x: nextX, y: nextY },
       }))
       return
     }
     commitView({
       ...viewRef.current,
-      x: drag.originX + deltaX,
-      y: drag.originY + deltaY,
+      x: clamp(drag.originX + deltaX, -WIDTH * 0.45, WIDTH * 0.45),
+      y: clamp(drag.originY + deltaY, -HEIGHT * 0.45, HEIGHT * 0.45),
     })
   }
 
@@ -974,6 +1163,31 @@ export function WalletBubbleMap({
       }
       dragRef.current = null
       setDragging(false)
+      if (drag.nodeOwner) {
+        if (drag.moved) {
+          const resolved = resolveDropOffset(
+            drag.nodeOwner,
+            drag.nodeX,
+            drag.nodeY,
+          )
+          if (
+            Math.abs(resolved.x - drag.nodeX) > 0.5 ||
+            Math.abs(resolved.y - drag.nodeY) > 0.5
+          ) {
+            // Ease the collision nudge instead of teleporting on drop.
+            settleRef.current = {
+              owner: drag.nodeOwner,
+              fromX: drag.nodeX,
+              fromY: drag.nodeY,
+              toX: resolved.x,
+              toY: resolved.y,
+              progress: 0,
+            }
+          }
+        }
+        setDraggingOwner(null)
+        draggingOwnerRef.current = null
+      }
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId)
       }
