@@ -1405,8 +1405,11 @@ export function WalletBubbleMap({
               !matchesSearch || (selectionOwner !== null && !isActive)
             const tier = holderTier(node.holder.tier)
             const percentSize = clamp(node.radius * 0.3, 10, 17)
-            const showNameInside = node.radius >= 40
             const label = displayLabel(node.holder)
+            // Keep the name inside only when the bubble is wide enough for the
+            // actual label; long role names move below the bubble instead.
+            const nameCapacity = Math.floor((node.radius * 2 - 14) / 5.6)
+            const showNameInside = node.radius >= 36 && label.length <= nameCapacity
             const transfers =
               (edgeStats.get(node.holder.owner)?.count ?? 0) +
               (tradeCounts.get(node.holder.owner) ?? 0)
