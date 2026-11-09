@@ -482,6 +482,10 @@ export function WalletBubbleMap({
   const [dragging, setDragging] = useState(false)
   const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null)
   const [view, setView] = useState<ViewState>({ x: 0, y: 0, scale: 1 })
+  const [motionPhase, setMotionPhase] = useState(0)
+  const [dragOffsets, setDragOffsets] = useState<
+    Record<string, { x: number; y: number }>
+  >({})
 
   const svgRef = useRef<SVGSVGElement>(null)
   const viewRef = useRef<ViewState>(view)
@@ -495,11 +499,59 @@ export function WalletBubbleMap({
     originX: number
     originY: number
     moved: boolean
+    nodeOwner: string | null
+    nodeOriginX: number
+    nodeOriginY: number
   } | null>(null)
 
   const layout = useMemo(
     () => computeLayout(holders, graph, decimals),
     [holders, graph, decimals],
+  )
+
+  // Gentle idle drift keeps the map alive like the SIDARA monitor while the
+  // base layout stays deterministic. Edges are rebuilt from the animated
+  // positions so links never detach from their bubbles.
+  useEffect(() => {
+    let frame = 0
+    let last = 0
+    const step = (now: number) => {
+      if (now - last >= 33) {
+        last = now
+        setMotionPhase(now)
+      }
+      frame = requestAnimationFrame(step)
+    }
+    frame = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(frame)
+  }, [])
+
+  const displayNodes = useMemo(() => {
+    const t = motionPhase / 1000
+    return layout.nodes.map((node) => {
+      const owner = node.holder.owner
+      const offset = dragOffsets[owner] ?? { x: 0, y: 0 }
+      const seed = (hashString(owner) / 4294967295) * Math.PI * 2
+      const amplitude = 3.5 + node.radius * 0.07
+      return {
+        ...node,
+        x:
+          node.x +
+          offset.x +
+          Math.cos(t * 0.38 + seed) * amplitude +
+          Math.cos(t * 0.91 + seed * 1.7) * amplitude * 0.2,
+        y:
+          node.y +
+          offset.y +
+          Math.sin(t * 0.31 + seed * 1.3) * amplitude * 0.85 +
+          Math.sin(t * 0.73 + seed) * amplitude * 0.18,
+      }
+    })
+  }, [layout, dragOffsets, motionPhase])
+
+  const displayEdges = useMemo(
+    () => buildPlacedEdges(displayNodes, graph?.edges ?? [], graph, decimals),
+    [displayNodes, graph, decimals],
   )
 
   const holderByOwner = useMemo(
@@ -664,7 +716,7 @@ export function WalletBubbleMap({
       ? graph?.edges.find((edge) => edge.key === (hoveredEdge ?? selectedEdge)) ?? null
       : null
 
-  const visibleEdges = layout.edges.filter((placed) => {
+  const visibleEdges = displayEdges.filter((placed) => {
     if (edgeMode === 'all') return true
     return edgeMode === 'wallet'
       ? placed.edge.kind === 'wallet'
@@ -790,12 +842,13 @@ export function WalletBubbleMap({
   function focusOwner(owner: string) {
     const node = layout.nodes.find((item) => item.holder.owner === owner)
     if (!node) return
+    const offset = dragOffsets[owner] ?? { x: 0, y: 0 }
     const scale = node.radius >= 44 ? 1.18 : 1.36
     animateView(
       {
         scale,
-        x: WIDTH / 2 - node.x * scale,
-        y: HEIGHT / 2 - node.y * scale,
+        x: WIDTH / 2 - (node.x + offset.x) * scale,
+        y: HEIGHT / 2 - (node.y + offset.y) * scale,
       },
       760,
     )
@@ -807,6 +860,7 @@ export function WalletBubbleMap({
     setSelectedEdge(null)
     setHovered(null)
     setHoveredEdge(null)
+    setDragOffsets({})
     animateView({ x: 0, y: 0, scale: 1 }, 640)
   }
 
@@ -840,6 +894,8 @@ export function WalletBubbleMap({
     if (event.button !== 0) return
     cancelViewAnimation()
     const target = event.target as Element | null
+    const nodeOwner =
+      target?.closest('.wallet-map__node')?.getAttribute('data-owner') ?? null
     if (!target?.closest('.wallet-map__node, .wallet-map__hub, .wallet-map__edge-hit')) {
       setSelected(null)
       setLockedOwner(null)
@@ -847,6 +903,7 @@ export function WalletBubbleMap({
     }
     const rect = event.currentTarget.getBoundingClientRect()
     const start = svgPoint(event.clientX, event.clientY, rect)
+    const existingOffset = nodeOwner ? dragOffsets[nodeOwner] : null
     dragRef.current = {
       pointerId: event.pointerId,
       startX: start.x,
@@ -854,6 +911,9 @@ export function WalletBubbleMap({
       originX: viewRef.current.x,
       originY: viewRef.current.y,
       moved: false,
+      nodeOwner,
+      nodeOriginX: existingOffset?.x ?? 0,
+      nodeOriginY: existingOffset?.y ?? 0,
     }
     setDragging(true)
   }
@@ -872,6 +932,30 @@ export function WalletBubbleMap({
       event.currentTarget.setPointerCapture(event.pointerId)
     }
     if (!drag.moved) return
+    if (drag.nodeOwner) {
+      const node = layout.nodes.find(
+        (item) => item.holder.owner === drag.nodeOwner,
+      )
+      if (!node) return
+      const scale = viewRef.current.scale || 1
+      const margin = node.radius + 10
+      setDragOffsets((currentOffsets) => ({
+        ...currentOffsets,
+        [drag.nodeOwner as string]: {
+          x: clamp(
+            drag.nodeOriginX + deltaX / scale,
+            margin - node.x,
+            WIDTH - margin - node.x,
+          ),
+          y: clamp(
+            drag.nodeOriginY + deltaY / scale,
+            margin - node.y,
+            HEIGHT - margin - node.y,
+          ),
+        },
+      }))
+      return
+    }
     commitView({
       ...viewRef.current,
       x: drag.originX + deltaX,
@@ -1397,7 +1481,7 @@ export function WalletBubbleMap({
             </text>
           </g>
 
-          {layout.nodes.map((node) => {
+          {displayNodes.map((node) => {
             const isActive = selectionOwner === node.holder.owner
             const matchesSearch =
               !searchActive || matchedOwners.has(node.holder.owner)
@@ -1429,6 +1513,7 @@ export function WalletBubbleMap({
                 }`}
                 transform={`translate(${node.x} ${node.y})`}
                 opacity={isDimmed ? 0.2 : 1}
+                data-owner={node.holder.owner}
                 role="button"
                 tabIndex={0}
                 aria-label={`${tier.emoji} ${tier.label} ${node.holder.label} ${shortenAddress(
