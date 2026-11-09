@@ -703,40 +703,38 @@
   text-decoration: underline;
 }
 
-.wallet-map__hub-pulse {
+.wallet-map__hub-orbit {
   transform-box: fill-box;
   transform-origin: center;
-  animation: wallet-map-hub-pulse 3.4s ease-in-out infinite;
+  animation: wallet-map-hub-orbit 4.4s ease-in-out infinite;
 }
 
-@keyframes wallet-map-hub-pulse {
+@keyframes wallet-map-hub-orbit {
   0%,
   100% {
-    opacity: 0.5;
-    transform: scale(0.97);
+    opacity: 0.3;
   }
   50% {
-    opacity: 1;
-    transform: scale(1.04);
+    opacity: 0.45;
   }
 }
 
 .wallet-map__hub-name {
-  fill: #ffffff;
+  fill: rgba(255, 255, 255, 0.92);
   font-family: var(--font-sans);
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 700;
   letter-spacing: 0.02em;
   text-anchor: middle;
 }
 
 .wallet-map__hub-sub {
-  fill: rgba(255, 255, 255, 0.45);
-  font-family: var(--font-mono);
-  font-size: 8.5px;
-  letter-spacing: 0.08em;
+  fill: rgba(255, 255, 255, 0.4);
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   text-anchor: middle;
-  text-transform: uppercase;
 }
 
 .wallet-map__node {
@@ -750,21 +748,45 @@
   stroke-opacity: 1;
 }
 
-.wallet-map__node-pulse {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: wallet-map-node-pulse 2.8s ease-in-out infinite;
+.wallet-map__node-orbit {
+  animation: wallet-map-node-orbit 3.6s ease-in-out infinite;
 }
 
-@keyframes wallet-map-node-pulse {
+@keyframes wallet-map-node-orbit {
   0%,
   100% {
-    opacity: 0.35;
-    transform: scale(0.97);
+    opacity: 0.3;
   }
   50% {
-    opacity: 0.9;
-    transform: scale(1.06);
+    opacity: 0.55;
+  }
+}
+
+.wallet-map__node-halo {
+  animation: wallet-map-node-halo 2.8s ease-in-out infinite;
+}
+
+@keyframes wallet-map-node-halo {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.wallet-map__node-selection {
+  animation: wallet-map-node-selection 2.8s ease-in-out infinite;
+}
+
+@keyframes wallet-map-node-selection {
+  0%,
+  100% {
+    opacity: 0.65;
+  }
+  50% {
+    opacity: 1;
   }
 }
 
@@ -774,7 +796,6 @@
     stroke-width 0.15s;
 }
 
-.wallet-map__node:hover .wallet-map__bubble-body,
 .wallet-map__node--locked .wallet-map__bubble-body,
 .wallet-map__node--active .wallet-map__bubble-body {
   stroke-opacity: 1;
@@ -788,36 +809,24 @@
   text-anchor: middle;
   dominant-baseline: middle;
   pointer-events: none;
-  paint-order: stroke;
-  stroke: rgba(6, 10, 19, 0.55);
-  stroke-width: 3px;
-  stroke-linejoin: round;
 }
 
 .wallet-map__node-name {
   font-family: var(--font-sans);
-  font-size: 9.5px;
+  font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.01em;
   text-anchor: middle;
   pointer-events: none;
-  paint-order: stroke;
-  stroke: rgba(6, 10, 19, 0.85);
-  stroke-width: 3px;
-  stroke-linejoin: round;
 }
 
 .wallet-map__node-meta {
-  fill: rgba(255, 255, 255, 0.42);
+  fill: rgba(255, 255, 255, 0.32);
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: 9px;
   letter-spacing: 0.02em;
   text-anchor: middle;
   pointer-events: none;
-  paint-order: stroke;
-  stroke: rgba(6, 10, 19, 0.9);
-  stroke-width: 3px;
-  stroke-linejoin: round;
 }
 
 .wallet-map__edge {

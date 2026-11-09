@@ -60,9 +60,9 @@ type WalletBubbleMapProps = {
 /** World units of the SVG scene. The canvas stretches this box with `meet`. */
 const WIDTH = 1000
 const HEIGHT = 700
-const MAX_BUBBLE_RADIUS = 84
-const MIN_BUBBLE_RADIUS = 15
-const HUB_RADIUS = 54
+const MAX_BUBBLE_RADIUS = 56
+const MIN_BUBBLE_RADIUS = 18
+const HUB_RADIUS = 62
 const SUPERNODE_TRANSFERS = 100
 
 /** SIDARA-style palette: one calm hue per protocol role. */
@@ -408,7 +408,7 @@ function computeLayout(
     .force(
       'collide',
       forceCollide<ForceNode>()
-        .radius((node) => node.radius + (node.radius > 55 ? 30 : 16))
+        .radius((node) => node.radius + (node.radius >= 44 ? 32 : 22))
         .strength(1)
         .iterations(4),
     )
@@ -652,9 +652,12 @@ export function WalletBubbleMap({
     return stats
   }, [graph, holderByOwner])
 
-  const activeOwner = lockedOwner ?? hovered ?? selected
+  // Selection drives map emphasis; hover only drives the tooltip so the map
+  // never dims just because the pointer crossed a bubble.
+  const selectionOwner = lockedOwner ?? selected
+  const tooltipOwner = hovered ?? selectionOwner
   const activeNode =
-    layout.nodes.find((node) => node.holder.owner === activeOwner) ?? null
+    layout.nodes.find((node) => node.holder.owner === tooltipOwner) ?? null
   const activeTrades = activeNode ? (tradeCounts.get(activeNode.holder.owner) ?? 0) : 0
   const activeEdge =
     (hoveredEdge ?? selectedEdge)
@@ -787,7 +790,7 @@ export function WalletBubbleMap({
   function focusOwner(owner: string) {
     const node = layout.nodes.find((item) => item.holder.owner === owner)
     if (!node) return
-    const scale = node.radius > 58 ? 1.14 : 1.42
+    const scale = node.radius >= 44 ? 1.18 : 1.36
     animateView(
       {
         scale,
@@ -1202,8 +1205,7 @@ export function WalletBubbleMap({
                 cy="50%"
                 r="50%"
               >
-                <stop offset="0%" stopColor={color} stopOpacity="0.3" />
-                <stop offset="58%" stopColor={color} stopOpacity="0.11" />
+                <stop offset="0%" stopColor={color} stopOpacity="0.2" />
                 <stop offset="100%" stopColor={color} stopOpacity="0" />
               </radialGradient>
             )
@@ -1274,20 +1276,20 @@ export function WalletBubbleMap({
 
           {visibleEdges.map((placed) => {
             const incident =
-              activeOwner !== null ? placed.edge.owners.includes(activeOwner) : true
+              selectionOwner !== null ? placed.edge.owners.includes(selectionOwner) : true
             const edgeActive = hoveredEdge === placed.edge.key || selectedEdge === placed.edge.key
             const searchRelevant =
               !searchActive ||
               placed.edge.owners.some((owner) => matchedOwners.has(owner))
             const dimmed =
               !searchRelevant ||
-              (activeOwner !== null && !incident) ||
+              (selectionOwner !== null && !incident) ||
               (hoveredEdge !== null && !edgeActive)
             const opacity = dimmed
               ? 0.05
               : edgeActive
                 ? 0.92
-                : activeOwner !== null && incident
+                : selectionOwner !== null && incident
                   ? 0.72
                   : 0.4
 
@@ -1366,67 +1368,55 @@ export function WalletBubbleMap({
             }}
           >
             <circle
-              r={HUB_RADIUS + 26}
+              className="wallet-map__hub-orbit"
+              r={HUB_RADIUS + 12}
               fill="none"
               stroke={HUB_COLOR}
-              strokeOpacity={0.12}
-              strokeWidth={1}
-              strokeDasharray="2 8"
-              aria-hidden="true"
-            />
-            <circle
-              className="wallet-map__hub-pulse"
-              r={HUB_RADIUS + 11}
-              fill={rgba(HUB_COLOR, 0.09)}
-              stroke={HUB_COLOR}
-              strokeOpacity={0.32}
+              strokeOpacity={0.2}
               strokeWidth={2}
               aria-hidden="true"
             />
             <circle
               r={HUB_RADIUS}
               fill={`url(#wallet-map-glow-${hexKey(HUB_COLOR)})`}
-              stroke={HUB_COLOR}
-              strokeOpacity={0.7}
-              strokeWidth={2.5}
+              opacity={0.75}
+              aria-hidden="true"
             />
             <circle
-              r={HUB_RADIUS * 0.78}
+              r={HUB_RADIUS}
               fill="none"
-              stroke="rgba(165, 180, 252, 0.28)"
-              strokeWidth={1}
-              aria-hidden="true"
+              stroke={HUB_COLOR}
+              strokeOpacity={0.6}
+              strokeWidth={2.5}
             />
             <text y={-6} className="wallet-map__hub-name">
               KLYTH
             </text>
-            <text y={13} className="wallet-map__hub-sub">
+            <text y={12} className="wallet-map__hub-sub">
               {holders.length} holders
             </text>
           </g>
 
           {layout.nodes.map((node) => {
-            const isActive = activeOwner === node.holder.owner
+            const isActive = selectionOwner === node.holder.owner
             const matchesSearch =
               !searchActive || matchedOwners.has(node.holder.owner)
-            const isDimmed = !matchesSearch || (activeOwner !== null && !isActive)
+            const isDimmed =
+              !matchesSearch || (selectionOwner !== null && !isActive)
             const tier = holderTier(node.holder.tier)
-            const percentSize = clamp(node.radius * 0.28, 9, 19)
-            const showNameInside = node.radius >= 44
-            const showNameOutside =
-              !showNameInside && (node.radius >= 27 || isActive)
-            const showMeta = node.radius >= 30 || isActive
+            const percentSize = clamp(node.radius * 0.3, 10, 17)
+            const showNameInside = node.radius >= 40
             const label = displayLabel(node.holder)
             const transfers =
               (edgeStats.get(node.holder.owner)?.count ?? 0) +
               (tradeCounts.get(node.holder.owner) ?? 0)
             const isSupernode = transfers >= SUPERNODE_TRANSFERS
-            const percentY = showNameInside ? node.radius * 0.2 : 0
-            const nameInsideY = -node.radius * 0.34
-            const nameOutsideY = node.radius + 15
-            const metaY = showNameOutside ? node.radius + 27 : node.radius + 16
+            const nameY = showNameInside ? -6 : node.radius + 14
+            const percentY = showNameInside ? 10 : 0
+            const metaY = showNameInside ? node.radius + 12 : node.radius + 26
             const key = hexKey(node.color)
-            const strokeWidth = isActive ? 2.4 : 1.5
+            const strokeWidth = isActive ? 2.5 : node.radius >= 30 ? 1.5 : 1
+            const bodyOpacity = isActive ? 1 : 0.6
 
             return (
               <g
@@ -1435,7 +1425,7 @@ export function WalletBubbleMap({
                   lockedOwner === node.holder.owner ? ' wallet-map__node--locked' : ''
                 }`}
                 transform={`translate(${node.x} ${node.y})`}
-                opacity={isDimmed ? 0.28 : 1}
+                opacity={isDimmed ? 0.2 : 1}
                 role="button"
                 tabIndex={0}
                 aria-label={`${tier.emoji} ${tier.label} ${node.holder.label} ${shortenAddress(
@@ -1465,29 +1455,40 @@ export function WalletBubbleMap({
                   }
                 }}
               >
-                <circle
-                  r={node.radius + 8}
-                  fill="none"
-                  stroke={node.color}
-                  strokeOpacity={0.12}
-                  strokeWidth={1}
-                  aria-hidden="true"
-                />
                 {isActive ? (
+                  <>
+                    <circle
+                      className="wallet-map__node-halo"
+                      r={node.radius + 20}
+                      fill={node.color}
+                      fillOpacity={0.08}
+                      aria-hidden="true"
+                    />
+                    <circle
+                      className="wallet-map__node-selection"
+                      r={node.radius + 14}
+                      fill="none"
+                      stroke={node.color}
+                      strokeOpacity={0.45}
+                      strokeWidth={3}
+                      aria-hidden="true"
+                    />
+                  </>
+                ) : !isDimmed ? (
                   <circle
-                    className="wallet-map__node-pulse"
-                    r={node.radius + 11}
+                    className="wallet-map__node-orbit"
+                    r={node.radius + 8}
                     fill="none"
                     stroke={node.color}
-                    strokeOpacity={0.42}
-                    strokeWidth={2.4}
+                    strokeOpacity={0.12}
+                    strokeWidth={1}
                     aria-hidden="true"
                   />
                 ) : null}
                 <circle
                   r={node.radius}
                   fill={`url(#wallet-map-glow-${key})`}
-                  opacity={isActive ? 1 : 0.75}
+                  opacity={isActive ? 1 : 0.4}
                   aria-hidden="true"
                 />
                 <circle
@@ -1495,27 +1496,15 @@ export function WalletBubbleMap({
                   r={node.radius}
                   fill="none"
                   stroke={node.color}
-                  strokeOpacity={isActive ? 0.95 : 0.62}
+                  strokeOpacity={bodyOpacity}
                   strokeWidth={strokeWidth}
                 />
-                {node.radius >= 32 ? (
-                  <circle
-                    r={node.radius * 0.78}
-                    fill="none"
-                    stroke={node.color}
-                    strokeOpacity={0.28}
-                    strokeWidth={1}
-                    aria-hidden="true"
-                  />
-                ) : null}
-                {node.radius >= 22 ? (
-                  <circle
-                    r={node.radius * 0.25}
-                    fill={node.color}
-                    opacity={0.1}
-                    aria-hidden="true"
-                  />
-                ) : null}
+                <circle
+                  r={node.radius * 0.25}
+                  fill={node.color}
+                  opacity={0.1}
+                  aria-hidden="true"
+                />
 
                 <text
                   textAnchor="middle"
@@ -1526,36 +1515,23 @@ export function WalletBubbleMap({
                   {formatHolderPercent(node.holder.percent)}
                 </text>
 
-                {showNameInside ? (
-                  <text
-                    textAnchor="middle"
-                    y={nameInsideY}
-                    className="wallet-map__node-name"
-                    style={{ fill: node.color }}
-                  >
-                    {label}
-                  </text>
-                ) : showNameOutside ? (
-                  <text
-                    textAnchor="middle"
-                    y={nameOutsideY}
-                    className="wallet-map__node-name"
-                    style={{ fill: node.color }}
-                  >
-                    {label}
-                  </text>
-                ) : null}
+                <text
+                  textAnchor="middle"
+                  y={nameY}
+                  className="wallet-map__node-name"
+                  style={{ fill: node.color }}
+                >
+                  {label}
+                </text>
 
-                {showMeta ? (
-                  <text
-                    textAnchor="middle"
-                    y={metaY}
-                    className="wallet-map__node-meta"
-                  >
-                    {tier.emoji} {tier.label}
-                    {isSupernode ? ' · ⚡' : ''}
-                  </text>
-                ) : null}
+                <text
+                  textAnchor="middle"
+                  y={metaY}
+                  className="wallet-map__node-meta"
+                >
+                  {tier.emoji} {tier.label}
+                  {isSupernode ? ' · ⚡' : ''}
+                </text>
               </g>
             )
           })}
@@ -1644,7 +1620,7 @@ export function WalletBubbleMap({
           type="button"
           className="icon-button"
           onClick={toggleLock}
-          disabled={!activeOwner}
+          disabled={!tooltipOwner}
           aria-label={lockedOwner ? 'Unlock the selected bubble' : 'Lock the hovered bubble'}
           title={lockedOwner ? 'Unlock bubble (L)' : 'Lock bubble (L)'}
         >
