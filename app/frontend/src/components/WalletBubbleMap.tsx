@@ -14,6 +14,7 @@ import {
   forceSimulation,
   forceX,
   forceY,
+  type Simulation,
   type SimulationLinkDatum,
   type SimulationNodeDatum,
 } from 'd3-force'
@@ -103,6 +104,20 @@ type LayoutNode = {
 type ForceNode = SimulationNodeDatum & LayoutNode
 
 type ForceLink = SimulationLinkDatum<ForceNode> & {
+  edge: TransferEdge
+}
+
+/**
+ * Live physics node. Home is the settled layout position; d3 springs the node
+ * back to it after a drag, exactly like the SIDARA bubble monitor.
+ */
+type SimNode = SimulationNodeDatum &
+  LayoutNode & {
+    homeX: number
+    homeY: number
+  }
+
+type SimLink = SimulationLinkDatum<SimNode> & {
   edge: TransferEdge
 }
 
@@ -621,18 +636,12 @@ export function WalletBubbleMap({
   const dirtyRef = useRef(true)
   const visibleRef = useRef(true)
   const autoShiftedRef = useRef(false)
-  const motionPhaseRef = useRef(0)
   const draggingOwnerRef = useRef<string | null>(null)
   const displayNodesRef = useRef<LayoutNode[]>([])
   const displayEdgesRef = useRef<PlacedEdge[]>([])
-  const dragOffsetsRef = useRef(new Map<string, { x: number; y: number }>())
-  const reactionRef = useRef<{
-    owner: string
-    x: number
-    y: number
-    radius: number
-    strength: number
-  } | null>(null)
+  const simulationRef = useRef<Simulation<SimNode, SimLink> | null>(null)
+  const simNodesRef = useRef(new Map<string, SimNode>())
+  const simRunningRef = useRef(false)
   const dragRef = useRef<{
     pointerId: number
     startX: number
@@ -641,18 +650,14 @@ export function WalletBubbleMap({
     originY: number
     moved: boolean
     nodeOwner: string | null
-    nodeOriginX: number
-    nodeOriginY: number
-    nodeX: number
-    nodeY: number
-  } | null>(null)
-  const settleRef = useRef<{
-    owner: string
-    fromX: number
-    fromY: number
-    toX: number
-    toY: number
-    progress: number
+    /** True once the bubble physics has been woken for this gesture. */
+    pinned: boolean
+    /** Pointer offset from the bubble centre, in world units. */
+    grabX: number
+    grabY: number
+    /** Last pinned world position, kept so a mid-drag rebuild can restore it. */
+    targetX: number | null
+    targetY: number | null
   } | null>(null)
 
   const layout = useMemo(
@@ -663,6 +668,95 @@ export function WalletBubbleMap({
     () => new Map(layout.nodes.map((node) => [node.holder.owner, node])),
     [layout],
   )
+
+  // SIDARA-style live physics. The simulation is built once per layout and only
+  // ticked while the user is dragging or a bubble is easing back home, so idle
+  // frames stay as cheap as before.
+  useEffect(() => {
+    const simNodes: SimNode[] = layout.nodes.map((node) => ({
+      ...node,
+      homeX: node.x,
+      homeY: node.y,
+    }))
+    const nodeByOwner = new Map(
+      simNodes.map((node) => [node.holder.owner, node]),
+    )
+    const links: SimLink[] = (graph?.edges ?? [])
+      .filter(
+        (edge) =>
+          edge.kind === 'wallet' &&
+          nodeByOwner.has(edge.owners[0]) &&
+          nodeByOwner.has(edge.owners[1]),
+      )
+      .map((edge) => ({
+        source: nodeByOwner.get(edge.owners[0]) as SimNode,
+        target: nodeByOwner.get(edge.owners[1]) as SimNode,
+        edge,
+      }))
+
+    const simulation = forceSimulation<SimNode>(simNodes)
+      // Link distance equals the settled home distance, so the link force is
+      // zero while bubbles rest in place and only tugs during a drag.
+      .force(
+        'link',
+        forceLink<SimNode, SimLink>(links)
+          .id((node) => node.holder.owner)
+          .distance((link) => {
+            const source = link.source as SimNode
+            const target = link.target as SimNode
+            const distance = Math.hypot(
+              target.homeX - source.homeX,
+              target.homeY - source.homeY,
+            )
+            return distance > 0
+              ? distance
+              : source.radius + target.radius + 90
+          })
+          .strength(0.02),
+      )
+      .force(
+        'collide',
+        forceCollide<SimNode>()
+          .radius((node) => node.radius + (node.radius >= 44 ? 26 : 18))
+          .strength(1)
+          .iterations(3),
+      )
+      .force('x', forceX<SimNode>((node) => node.homeX).strength(0.85))
+      .force('y', forceY<SimNode>((node) => node.homeY).strength(0.85))
+      .alphaDecay(0.05)
+      .velocityDecay(0.7)
+      .alphaMin(0.001)
+      .stop()
+    // Never let the very first tick apply full alpha to a settled layout.
+    simulation.alpha(0)
+
+    simulationRef.current = simulation
+    simNodesRef.current = nodeByOwner
+
+    // Keep an in-flight drag alive when the graph refreshes mid-gesture.
+    const drag = dragRef.current
+    const dragOwner = drag?.pinned ? drag.nodeOwner : null
+    const dragNode = dragOwner ? nodeByOwner.get(dragOwner) : null
+    if (dragNode) {
+      const targetX = drag?.targetX ?? dragNode.homeX
+      const targetY = drag?.targetY ?? dragNode.homeY
+      dragNode.x = targetX
+      dragNode.y = targetY
+      dragNode.fx = targetX
+      dragNode.fy = targetY
+      simulation.alpha(0.2).alphaTarget(0.3)
+      simRunningRef.current = true
+    } else {
+      simRunningRef.current = false
+    }
+
+    return () => {
+      simulation.stop()
+      if (simulationRef.current === simulation) {
+        simulationRef.current = null
+      }
+    }
+  }, [layout, graph])
 
   const holderByOwner = useMemo(
     () => new Map(holders.map((holder) => [holder.owner, holder])),
@@ -860,54 +954,51 @@ export function WalletBubbleMap({
   function computeDisplayNodes(now: number, state: DrawState): LayoutNode[] {
     const phase = state.reduceMotion ? 0 : now
     const dragOwner = draggingOwnerRef.current
-    const offsets = dragOffsetsRef.current
+    const simNodes = simNodesRef.current
 
-    const positioned = state.layout.nodes.map((node) => {
-      const owner = node.holder.owner
-      const offset = offsets.get(owner) ?? ZERO_OFFSET
-      if (owner === dragOwner) {
-        // Freeze drift under the pointer so the bubble tracks the cursor
-        // exactly while it is being dragged.
-        return { ...node, x: node.x + offset.x, y: node.y + offset.y }
+    return state.layout.nodes.map((node) => {
+      const sim = simNodes.get(node.holder.owner)
+      const baseX = sim?.x ?? node.x
+      const baseY = sim?.y ?? node.y
+      if (node.holder.owner === dragOwner) {
+        // Freeze drift under the pointer so the bubble stays glued to the grab
+        // point while the simulation pushes its neighbours around.
+        return { ...node, x: baseX, y: baseY }
       }
       const drift = state.reduceMotion
         ? ZERO_OFFSET
-        : driftOffset(owner, node.radius, phase)
+        : driftOffset(node.holder.owner, node.radius, phase)
       return {
         ...node,
-        x: node.x + offset.x + drift.x,
-        y: node.y + offset.y + drift.y,
+        x: baseX + drift.x,
+        y: baseY + drift.y,
       }
     })
+  }
 
-    const reaction = reactionRef.current
-    if (!reaction || reaction.strength <= 0.02) return positioned
+  function stepSimulation(): void {
+    const simulation = simulationRef.current
+    if (!simulation) return
+    simulation.tick()
 
-    // Other bubbles gently make room while a neighbour is dragged.
-    return positioned.map((node) => {
-      if (node.holder.owner === reaction.owner) return node
-      const deltaX = node.x - reaction.x
-      const deltaY = node.y - reaction.y
+    const dragOwner = draggingOwnerRef.current
+    for (const node of simulation.nodes()) {
+      const margin = node.radius + 10
+      node.x = clamp(node.x ?? margin, margin, WIDTH - margin)
+      node.y = clamp(node.y ?? margin, margin, HEIGHT - margin)
+
+      // Keep neighbours out of the hub, but let a dragged bubble pass over it
+      // so the pointer never feels blocked.
+      if (node.holder.owner === dragOwner) continue
+      const deltaX = node.x - WIDTH / 2
+      const deltaY = node.y - HEIGHT / 2
       const distance = Math.hypot(deltaX, deltaY)
-      if (distance < 0.001) return node
-      const influence = node.radius + reaction.radius + 72
-      const soft =
-        Math.pow(Math.max(0, 1 - distance / influence), 2) *
-        20 *
-        reaction.strength
-      // Hard floor so a bubble dragged straight into a neighbour cannot
-      // overlap it while the push ramps up.
-      const collision =
-        Math.max(0, node.radius + reaction.radius + 8 - distance) *
-        reaction.strength
-      const push = Math.max(soft, collision)
-      if (push < 0.05) return node
-      return {
-        ...node,
-        x: node.x + (deltaX / distance) * push,
-        y: node.y + (deltaY / distance) * push,
-      }
-    })
+      const minimum = HUB_RADIUS + node.radius + 10
+      if (distance >= minimum) continue
+      const angle = distance < 0.001 ? 0 : Math.atan2(deltaY, deltaX)
+      node.x = WIDTH / 2 + Math.cos(angle) * minimum
+      node.y = HEIGHT / 2 + Math.sin(angle) * minimum
+    }
   }
 
   useEffect(() => {
@@ -919,32 +1010,28 @@ export function WalletBubbleMap({
       const state = drawStateRef.current
 
       if (canvas && state && !document.hidden && visibleRef.current) {
-        if (!state.reduceMotion) {
-          motionPhaseRef.current = now
-        }
-
-        const reaction = reactionRef.current
-        if (reaction) {
-          const target = draggingOwnerRef.current === reaction.owner ? 1 : 0
-          reaction.strength += (target - reaction.strength) * 0.22
-          if (reaction.strength < 0.02) reactionRef.current = null
-        }
-
-        const settle = settleRef.current
-        if (settle) {
-          settle.progress = Math.min(1, settle.progress + 0.14)
-          const k = 1 - Math.pow(1 - settle.progress, 3)
-          dragOffsetsRef.current.set(settle.owner, {
-            x: settle.fromX + (settle.toX - settle.fromX) * k,
-            y: settle.fromY + (settle.toY - settle.fromY) * k,
-          })
-          if (settle.progress >= 1) settleRef.current = null
+        let simulated = false
+        if (simRunningRef.current) {
+          const simulation = simulationRef.current
+          if (simulation) {
+            stepSimulation()
+            simulated = true
+            if (
+              draggingOwnerRef.current === null &&
+              simulation.alphaTarget() === 0 &&
+              simulation.alpha() < 0.02
+            ) {
+              simulation.alpha(0)
+              simRunningRef.current = false
+            }
+          } else {
+            simRunningRef.current = false
+          }
         }
 
         const interacting =
           dragRef.current !== null ||
-          reactionRef.current !== null ||
-          settleRef.current !== null ||
+          simulated ||
           viewAnimationRef.current !== null
         const animateSelection = !state.reduceMotion && state.selectionOwner !== null
         const needsPaint =
@@ -1331,7 +1418,6 @@ export function WalletBubbleMap({
   function handlePointerDown(event: ReactPointerEvent<HTMLCanvasElement>) {
     if (event.button !== 0) return
     cancelViewAnimation()
-    settleRef.current = null
 
     const point = localPointFromEvent(event)
     const node = hitTestNode(point)
@@ -1344,9 +1430,6 @@ export function WalletBubbleMap({
       setSelectedEdge(null)
     }
 
-    const layoutNode = node ? layoutByOwner.get(node.holder.owner) ?? null : null
-    const originX = node && layoutNode ? node.x - layoutNode.x : 0
-    const originY = node && layoutNode ? node.y - layoutNode.y : 0
     const { width, height } = sizeRef.current
     const start = viewBoxPoint(
       event.nativeEvent.offsetX,
@@ -1362,22 +1445,15 @@ export function WalletBubbleMap({
       originY: viewRef.current.y,
       moved: false,
       nodeOwner: node?.holder.owner ?? null,
-      nodeOriginX: originX,
-      nodeOriginY: originY,
-      nodeX: originX,
-      nodeY: originY,
+      pinned: false,
+      grabX: node ? point.x - node.x : 0,
+      grabY: node ? point.y - node.y : 0,
+      targetX: node?.x ?? null,
+      targetY: node?.y ?? null,
     }
 
-    if (node && layoutNode) {
-      draggingOwnerRef.current = node.holder.owner
+    if (node) {
       setHovered(null)
-      reactionRef.current = {
-        owner: node.holder.owner,
-        x: node.x,
-        y: node.y,
-        radius: node.radius,
-        strength: reactionRef.current?.strength ?? 0,
-      }
     }
 
     setDragging(true)
@@ -1419,35 +1495,50 @@ export function WalletBubbleMap({
       // Capture only once a real drag starts. Capturing on pointerdown retargets
       // the follow-up click to the canvas root, which would swallow bubble clicks.
       event.currentTarget.setPointerCapture(event.pointerId)
+
+      if (drag.nodeOwner) {
+        const simulation = simulationRef.current
+        const simNode = simNodesRef.current.get(drag.nodeOwner)
+        if (simulation && simNode) {
+          // Wake the SIDARA physics only for real drags: pin the bubble at the
+          // spot the user grabbed, then let collisions shove its neighbours.
+          const displayNode = displayNodesRef.current.find(
+            (item) => item.holder.owner === drag.nodeOwner,
+          )
+          const fromX = drag.targetX ?? displayNode?.x ?? simNode.x ?? simNode.homeX
+          const fromY = drag.targetY ?? displayNode?.y ?? simNode.y ?? simNode.homeY
+          simNode.x = fromX
+          simNode.y = fromY
+          simNode.fx = fromX
+          simNode.fy = fromY
+          simNode.vx = 0
+          simNode.vy = 0
+          drag.targetX = fromX
+          drag.targetY = fromY
+          drag.pinned = true
+          draggingOwnerRef.current = drag.nodeOwner
+          simulation.alpha(Math.max(simulation.alphaTarget(), 0.2))
+          simulation.alphaTarget(0.3)
+          simRunningRef.current = true
+        }
+      }
     }
     if (!drag.moved) return
 
     if (drag.nodeOwner) {
+      const simNode = simNodesRef.current.get(drag.nodeOwner)
+      if (!simNode) return
       const node = layoutByOwner.get(drag.nodeOwner)
-      if (!node) return
-      const scale = viewRef.current.scale || 1
-      const margin = node.radius + 10
-      const nextX = clamp(
-        drag.nodeOriginX + deltaX / scale,
-        margin - node.x,
-        WIDTH - margin - node.x,
-      )
-      const nextY = clamp(
-        drag.nodeOriginY + deltaY / scale,
-        margin - node.y,
-        HEIGHT - margin - node.y,
-      )
-      dragOffsetsRef.current.set(drag.nodeOwner, { x: nextX, y: nextY })
-      reactionRef.current = {
-        owner: drag.nodeOwner,
-        x: node.x + nextX,
-        y: node.y + nextY,
-        radius: node.radius,
-        strength: reactionRef.current?.strength ?? 0,
-      }
-      drag.nodeX = nextX
-      drag.nodeY = nextY
-      setHovered(null)
+      const radius = node?.radius ?? simNode.radius
+      const margin = radius + 10
+      const world = toWorld(current, viewRef.current)
+      // Pin the bubble to the pointer; d3 keeps the spring and collisions
+      // running so the motion stays soft instead of snapping 1:1.
+      simNode.fx = clamp(world.x - drag.grabX, margin, WIDTH - margin)
+      simNode.fy = clamp(world.y - drag.grabY, margin, HEIGHT - margin)
+      drag.targetX = simNode.fx ?? null
+      drag.targetY = simNode.fy ?? null
+      simRunningRef.current = true
     } else {
       viewRef.current = {
         ...viewRef.current,
@@ -1468,27 +1559,17 @@ export function WalletBubbleMap({
     dragRef.current = null
     setDragging(false)
 
-    if (drag.nodeOwner) {
-      if (drag.moved) {
-        const resolved = resolveDropOffset(
-          drag.nodeOwner,
-          drag.nodeX,
-          drag.nodeY,
-        )
-        if (
-          Math.abs(resolved.x - drag.nodeX) > 0.5 ||
-          Math.abs(resolved.y - drag.nodeY) > 0.5
-        ) {
-          // Ease the collision nudge instead of teleporting on drop.
-          settleRef.current = {
-            owner: drag.nodeOwner,
-            fromX: drag.nodeX,
-            fromY: drag.nodeY,
-            toX: resolved.x,
-            toY: resolved.y,
-            progress: 0,
-          }
-        }
+    if (drag.nodeOwner && drag.pinned) {
+      const simNode = simNodesRef.current.get(drag.nodeOwner)
+      if (simNode) {
+        // Unpin and let the SIDARA spring carry the bubble back home.
+        simNode.fx = null
+        simNode.fy = null
+      }
+      const simulation = simulationRef.current
+      if (simulation) {
+        simulation.alphaTarget(0)
+        simRunningRef.current = true
       }
       draggingOwnerRef.current = null
     }
@@ -1529,59 +1610,31 @@ export function WalletBubbleMap({
     finishDrag(event, false)
   }
 
-  function handlePointerLeave() {
-    if (dragRef.current) return
+  function handlePointerLeave(event: ReactPointerEvent<HTMLCanvasElement>) {
+    const drag = dragRef.current
+    if (drag) {
+      // A press that leaves the canvas without capture would otherwise keep the
+      // physics awake forever. Release the pin and let it settle.
+      if (event.currentTarget.hasPointerCapture(drag.pointerId)) return
+      dragRef.current = null
+      setDragging(false)
+      if (drag.pinned && drag.nodeOwner) {
+        const simNode = simNodesRef.current.get(drag.nodeOwner)
+        if (simNode) {
+          simNode.fx = null
+          simNode.fy = null
+        }
+        const simulation = simulationRef.current
+        if (simulation) {
+          simulation.alphaTarget(0)
+          simRunningRef.current = true
+        }
+        draggingOwnerRef.current = null
+      }
+      return
+    }
     setHovered(null)
     setHoveredEdge(null)
-  }
-
-  function resolveDropOffset(
-    owner: string,
-    x: number,
-    y: number,
-  ): { x: number; y: number } {
-    const node = layoutByOwner.get(owner)
-    if (!node) return { x, y }
-    const resolved = { x, y }
-    // Nudge the dropped bubble out of any overlap so releasing it on top of a
-    // neighbour does not leave two bubbles stacked forever.
-    for (let pass = 0; pass < 8; pass += 1) {
-      let moved = false
-      for (const other of layout.nodes) {
-        if (other.holder.owner === owner) continue
-        const otherOffset =
-          dragOffsetsRef.current.get(other.holder.owner) ?? ZERO_OFFSET
-        const drift = reduceMotion
-          ? ZERO_OFFSET
-          : driftOffset(
-              other.holder.owner,
-              other.radius,
-              motionPhaseRef.current,
-            )
-        const otherX = other.x + otherOffset.x + drift.x
-        const otherY = other.y + otherOffset.y + drift.y
-        const centerX = node.x + resolved.x
-        const centerY = node.y + resolved.y
-        let deltaX = centerX - otherX
-        let deltaY = centerY - otherY
-        const distance = Math.hypot(deltaX, deltaY)
-        const minimum = node.radius + other.radius + 8
-        if (distance >= minimum) continue
-        if (distance < 0.001) {
-          deltaX = 1
-          deltaY = 0
-        }
-        const length = Math.hypot(deltaX, deltaY) || 1
-        resolved.x += (deltaX / length) * (minimum - distance)
-        resolved.y += (deltaY / length) * (minimum - distance)
-        moved = true
-      }
-      if (!moved) break
-    }
-    const margin = node.radius + 10
-    resolved.x = clamp(resolved.x, margin - node.x, WIDTH - margin - node.x)
-    resolved.y = clamp(resolved.y, margin - node.y, HEIGHT - margin - node.y)
-    return resolved
   }
 
   function zoomBy(factor: number) {
@@ -1625,9 +1678,18 @@ export function WalletBubbleMap({
     setHovered(null)
     setHoveredEdge(null)
     draggingOwnerRef.current = null
-    reactionRef.current = null
-    settleRef.current = null
-    dragOffsetsRef.current.clear()
+
+    // Let any in-flight physics finish instead of freezing mid-bounce.
+    const simulation = simulationRef.current
+    if (simulation) {
+      for (const node of simulation.nodes()) {
+        node.fx = null
+        node.fy = null
+      }
+      simulation.alphaTarget(0)
+      simRunningRef.current = simulation.alpha() > 0
+    }
+
     animateView({ x: 0, y: 0, scale: 1 }, 640)
   }
 
