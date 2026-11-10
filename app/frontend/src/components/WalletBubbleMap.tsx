@@ -53,13 +53,21 @@ type WalletBubbleMapProps = {
   onRefreshTransfers: () => void
 }
 
-/** World units of the SVG scene. The canvas stretches this box with `meet`. */
+/** World units of the canvas scene. The viewport stretches this box with `meet`. */
 const WIDTH = 1000
 const HEIGHT = 700
 const MAX_BUBBLE_RADIUS = 56
 const MIN_BUBBLE_RADIUS = 18
 const HUB_RADIUS = 62
 const SUPERNODE_TRANSFERS = 100
+const GRID_STEP = 40
+const TAU = Math.PI * 2
+const GRID_STROKE = 'rgba(224, 166, 75, 0.07)'
+const FONT_SANS =
+  "'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+const FONT_MONO =
+  "'IBM Plex Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace"
+const ZERO_OFFSET = { x: 0, y: 0 }
 
 /** SIDARA-style palette: one calm hue per protocol role. */
 const CLUSTER_COLORS_BY_ROLE: Record<HolderRole, string> = {
@@ -100,13 +108,14 @@ type ForceLink = SimulationLinkDatum<ForceNode> & {
 
 type PlacedEdge = {
   edge: TransferEdge
-  path: string
   startX: number
   startY: number
   endX: number
   endY: number
-  midX: number
-  midY: number
+  /** Quadratic control point; sits on the line for straight links. */
+  controlX: number
+  controlY: number
+  straight: boolean
   color: string
   sourceColor: string
   targetColor: string
@@ -125,6 +134,26 @@ type ViewState = {
 }
 
 type NodeKind = 'Contract' | 'EOA'
+
+type AmbientDot = {
+  x: number
+  y: number
+  r: number
+  alpha: number
+}
+
+type DrawState = {
+  layout: Layout
+  graph: TransferGraph | null
+  decimals: number
+  edgeMode: EdgeMode
+  selectionOwner: string | null
+  hoveredEdge: string | null
+  selectedEdge: string | null
+  reduceMotion: boolean
+  ambientDots: AmbientDot[]
+  supernodes: Set<string>
+}
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
@@ -178,10 +207,6 @@ function rgba(color: string, alpha: number): string {
   return `rgba(${red}, ${green}, ${blue}, ${alpha})`
 }
 
-function hexKey(color: string): string {
-  return color.replace('#', '')
-}
-
 function roleColor(role: HolderRole): string {
   return CLUSTER_COLORS_BY_ROLE[role]
 }
@@ -196,31 +221,102 @@ function displayLabel(holder: TokenHolder): string {
     : holder.label
 }
 
-function edgeGradientId(edgeKey: string): string {
-  return `wallet-map-edge-${hashString(edgeKey)}`
-}
-
 /** Cluster ids look like `C1`; the UI reads better as `Cluster 1`. */
 function clusterLabel(id: string): string {
   return `Cluster ${id.replace(/^C/, '')}`
 }
 
-function svgPoint(
-  clientX: number,
-  clientY: number,
-  rect: DOMRect,
-): { x: number; y: number } {
-  // `preserveAspectRatio="xMidYMid meet"` keeps the world box centred and
-  // uniformly scaled inside the element.
-  const scale = Math.min(rect.width / WIDTH, rect.height / HEIGHT)
-  const renderedWidth = WIDTH * scale
-  const renderedHeight = HEIGHT * scale
-  const offsetX = (rect.width - renderedWidth) / 2
-  const offsetY = (rect.height - renderedHeight) / 2
+type FitBox = {
+  scale: number
+  offsetX: number
+  offsetY: number
+}
+
+function fitBox(width: number, height: number): FitBox {
+  const scale = Math.min(width / WIDTH, height / HEIGHT)
   return {
-    x: (clientX - rect.left - offsetX) / scale,
-    y: (clientY - rect.top - offsetY) / scale,
+    scale,
+    offsetX: (width - WIDTH * scale) / 2,
+    offsetY: (height - HEIGHT * scale) / 2,
   }
+}
+
+/** Element-local coordinates to the untransformed viewBox coordinate space. */
+function viewBoxPoint(
+  localX: number,
+  localY: number,
+  fit: FitBox,
+): { x: number; y: number } {
+  return {
+    x: (localX - fit.offsetX) / fit.scale,
+    y: (localY - fit.offsetY) / fit.scale,
+  }
+}
+
+/** viewBox coordinates to the layout/world space under the camera transform. */
+function toWorld(
+  point: { x: number; y: number },
+  view: ViewState,
+): { x: number; y: number } {
+  const scale = view.scale || 1
+  return {
+    x: (point.x - view.x) / scale,
+    y: (point.y - view.y) / scale,
+  }
+}
+
+function distanceToSegment(
+  pointX: number,
+  pointY: number,
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+): number {
+  const deltaX = endX - startX
+  const deltaY = endY - startY
+  const lengthSquared = deltaX * deltaX + deltaY * deltaY
+  if (lengthSquared <= 0.0001) {
+    return Math.hypot(pointX - startX, pointY - startY)
+  }
+  const t = clamp(
+    ((pointX - startX) * deltaX + (pointY - startY) * deltaY) / lengthSquared,
+    0,
+    1,
+  )
+  return Math.hypot(pointX - (startX + deltaX * t), pointY - (startY + deltaY * t))
+}
+
+function distanceToEdge(
+  pointX: number,
+  pointY: number,
+  placed: PlacedEdge,
+): number {
+  const samples = placed.straight ? 1 : 10
+  let previousX = placed.startX
+  let previousY = placed.startY
+  let best = Number.POSITIVE_INFINITY
+
+  for (let index = 1; index <= samples; index += 1) {
+    const t = index / samples
+    const inverse = 1 - t
+    const x =
+      inverse * inverse * placed.startX +
+      2 * inverse * t * placed.controlX +
+      t * t * placed.endX
+    const y =
+      inverse * inverse * placed.startY +
+      2 * inverse * t * placed.controlY +
+      t * t * placed.endY
+    best = Math.min(
+      best,
+      distanceToSegment(pointX, pointY, previousX, previousY, x, y),
+    )
+    previousX = x
+    previousY = y
+  }
+
+  return best
 }
 
 function buildPlacedEdges(
@@ -257,23 +353,23 @@ function buildPlacedEdges(
     // reads as a normal connection instead of a dashed arc.
     const straight = edge.kind === 'curve'
     const bend = 0.18
-    let midX = (startX + endX) / 2
-    let midY = (startY + endY) / 2
+    let controlX = (startX + endX) / 2
+    let controlY = (startY + endY) / 2
 
     if (!straight) {
-      midX -= unitY * distance * bend * bendDirection
-      midY += unitX * distance * bend * bendDirection
+      controlX -= unitY * distance * bend * bendDirection
+      controlY += unitX * distance * bend * bendDirection
 
       // Never let a link cut straight through the KLYTH hub.
-      const hubDeltaX = midX - hubX
-      const hubDeltaY = midY - hubY
+      const hubDeltaX = controlX - hubX
+      const hubDeltaY = controlY - hubY
       const hubDistance = Math.hypot(hubDeltaX, hubDeltaY)
       const safeHubDistance = HUB_RADIUS + 34
       if (hubDistance < safeHubDistance) {
         const angle =
           hubDistance < 0.001 ? Math.PI / 2 : Math.atan2(hubDeltaY, hubDeltaX)
-        midX = hubX + Math.cos(angle) * safeHubDistance
-        midY = hubY + Math.sin(angle) * safeHubDistance
+        controlX = hubX + Math.cos(angle) * safeHubDistance
+        controlY = hubY + Math.sin(angle) * safeHubDistance
       }
     }
 
@@ -308,15 +404,13 @@ function buildPlacedEdges(
 
     placed.push({
       edge,
-      path: straight
-        ? `M ${startX} ${startY} L ${endX} ${endY}`
-        : `M ${startX} ${startY} Q ${midX} ${midY} ${endX} ${endY}`,
       startX,
       startY,
       endX,
       endY,
-      midX: straight ? midX : 0.25 * startX + 0.5 * midX + 0.25 * endX,
-      midY: straight ? midY : 0.25 * startY + 0.5 * midY + 0.25 * endY,
+      controlX,
+      controlY,
+      straight,
       color,
       sourceColor,
       targetColor,
@@ -479,6 +573,21 @@ function computeLayout(
   return { nodes, edges }
 }
 
+function traceEdge(context: CanvasRenderingContext2D, placed: PlacedEdge) {
+  context.beginPath()
+  context.moveTo(placed.startX, placed.startY)
+  if (placed.straight) {
+    context.lineTo(placed.endX, placed.endY)
+  } else {
+    context.quadraticCurveTo(
+      placed.controlX,
+      placed.controlY,
+      placed.endX,
+      placed.endY,
+    )
+  }
+}
+
 export function WalletBubbleMap({
   holders,
   tradeCounts,
@@ -498,26 +607,25 @@ export function WalletBubbleMap({
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null)
-  const [view, setView] = useState<ViewState>({ x: 0, y: 0, scale: 1 })
-  const [motionPhase, setMotionPhase] = useState(0)
   const [reduceMotion] = useState(
     () =>
       typeof window !== 'undefined' &&
       window.matchMedia('(prefers-reduced-motion: reduce)').matches,
   )
-  const [draggingOwner, setDraggingOwner] = useState<string | null>(null)
-  const [dragOffsets, setDragOffsets] = useState<
-    Record<string, { x: number; y: number }>
-  >({})
 
-  const svgRef = useRef<SVGSVGElement>(null)
-  const viewRef = useRef<ViewState>(view)
-  const animationRef = useRef<number | null>(null)
-  const suppressClickRef = useRef(false)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const drawStateRef = useRef<DrawState | null>(null)
+  const sizeRef = useRef({ width: 0, height: 0 })
+  const viewRef = useRef<ViewState>({ x: 0, y: 0, scale: 1 })
+  const viewAnimationRef = useRef<number | null>(null)
+  const dirtyRef = useRef(true)
+  const visibleRef = useRef(true)
   const autoShiftedRef = useRef(false)
   const motionPhaseRef = useRef(0)
   const draggingOwnerRef = useRef<string | null>(null)
   const displayNodesRef = useRef<LayoutNode[]>([])
+  const displayEdgesRef = useRef<PlacedEdge[]>([])
+  const dragOffsetsRef = useRef(new Map<string, { x: number; y: number }>())
   const reactionRef = useRef<{
     owner: string
     x: number
@@ -551,62 +659,220 @@ export function WalletBubbleMap({
     () => computeLayout(holders, graph, decimals),
     [holders, graph, decimals],
   )
+  const layoutByOwner = useMemo(
+    () => new Map(layout.nodes.map((node) => [node.holder.owner, node])),
+    [layout],
+  )
 
-  // Gentle idle drift keeps the map alive like the SIDARA monitor while the
-  // base layout stays deterministic. The tick is capped at ~24fps and paused
-  // when the tab is hidden, which keeps the map smooth without burning CPU.
+  const holderByOwner = useMemo(
+    () => new Map(holders.map((holder) => [holder.owner, holder])),
+    [holders],
+  )
+
+  const ambientDots = useMemo<AmbientDot[]>(
+    () =>
+      Array.from({ length: 34 }, (_, index) => {
+        const hash = hashString(`klyth-ambient-${index}`)
+        return {
+          x: hash % WIDTH,
+          y: (hash >>> 10) % HEIGHT,
+          r: 0.6 + ((hash >>> 20) % 26) / 10,
+          alpha: 0.05 + ((hash >>> 24) % 10) / 100,
+        }
+      }),
+    [],
+  )
+
+  const edgeStats = useMemo(() => {
+    const stats = new Map<string, { count: number; volumeRaw: bigint; peers: Set<string> }>()
+    for (const edge of graph?.edges ?? []) {
+      for (const [owner, peer] of [
+        [edge.owners[0], edge.owners[1]],
+        [edge.owners[1], edge.owners[0]],
+      ]) {
+        if (!holderByOwner.has(owner)) continue
+        const entry = stats.get(owner) ?? { count: 0, volumeRaw: 0n, peers: new Set<string>() }
+        entry.count += edge.count
+        entry.volumeRaw += BigInt(edge.amountRaw)
+        entry.peers.add(peer)
+        stats.set(owner, entry)
+      }
+    }
+    return stats
+  }, [graph, holderByOwner])
+
+  const supernodes = useMemo(() => {
+    const result = new Set<string>()
+    for (const node of layout.nodes) {
+      const owner = node.holder.owner
+      const transfers =
+        (edgeStats.get(owner)?.count ?? 0) + (tradeCounts.get(owner) ?? 0)
+      if (transfers >= SUPERNODE_TRANSFERS) result.add(owner)
+    }
+    return result
+  }, [layout, edgeStats, tradeCounts])
+
+  // Selection drives map emphasis; hover only drives the tooltip so the map
+  // never dims just because the pointer crossed a bubble.
+  const selectionOwner = lockedOwner ?? selected
+  const tooltipOwner = dragging ? null : hovered ?? selectionOwner
+  const activeNode =
+    layout.nodes.find((node) => node.holder.owner === tooltipOwner) ?? null
+  const activeTrades = activeNode ? (tradeCounts.get(activeNode.holder.owner) ?? 0) : 0
+  const activeEdge =
+    (hoveredEdge ?? selectedEdge)
+      ? graph?.edges.find((edge) => edge.key === (hoveredEdge ?? selectedEdge)) ?? null
+      : null
+
+  const walletEdgeCount = graph?.edges.filter((edge) => edge.kind === 'wallet').length ?? 0
+
+  // Show the wallet-only view when real wallet-to-wallet links exist. If the
+  // recent trace only contains curve flows, fall back to all flows once so the
+  // map never looks empty on a fresh scan.
   useEffect(() => {
-    let frame = 0
-    let last = 0
-    const step = (now: number) => {
-      if (now - last >= 42) {
-        last = now
-        const interaction =
-          reactionRef.current !== null || settleRef.current !== null
-        if (!reduceMotion) motionPhaseRef.current = now
-        const reaction = reactionRef.current
-        if (reaction) {
-          // Ramp the neighbour push up while dragging, then ease it back so
-          // released bubbles settle instead of snapping.
-          const target = draggingOwnerRef.current === reaction.owner ? 1 : 0
-          reaction.strength += (target - reaction.strength) * 0.22
-          if (reaction.strength < 0.02) reactionRef.current = null
-        }
-        const settle = settleRef.current
-        if (settle) {
-          settle.progress = Math.min(1, settle.progress + 0.14)
-          const k = 1 - Math.pow(1 - settle.progress, 3)
-          setDragOffsets((current) => ({
-            ...current,
-            [settle.owner]: {
-              x: settle.fromX + (settle.toX - settle.fromX) * k,
-              y: settle.fromY + (settle.toY - settle.fromY) * k,
-            },
-          }))
-          if (settle.progress >= 1) settleRef.current = null
-        }
-        if ((!reduceMotion || interaction) && !document.hidden) {
-          setMotionPhase(now)
+    if (!graph || autoShiftedRef.current || graph.edges.length === 0) return
+    autoShiftedRef.current = true
+    if (walletEdgeCount === 0) {
+      setEdgeMode('all')
+    }
+  }, [graph, walletEdgeCount])
+
+  useEffect(() => {
+    if (lockedOwner && !holderByOwner.has(lockedOwner)) setLockedOwner(null)
+    if (selected && !holderByOwner.has(selected)) setSelected(null)
+  }, [holderByOwner, lockedOwner, selected])
+
+  // Keep the imperative renderer in sync with the latest props and UI state.
+  useEffect(() => {
+    drawStateRef.current = {
+      layout,
+      graph,
+      decimals,
+      edgeMode,
+      selectionOwner,
+      hoveredEdge,
+      selectedEdge,
+      reduceMotion,
+      ambientDots,
+      supernodes,
+    }
+    dirtyRef.current = true
+  })
+
+  function cancelViewAnimation() {
+    if (viewAnimationRef.current !== null) {
+      cancelAnimationFrame(viewAnimationRef.current)
+      viewAnimationRef.current = null
+    }
+  }
+
+  function animateView(
+    target: ViewState,
+    duration = 720,
+    follow?: () => ViewState | null,
+  ) {
+    cancelViewAnimation()
+    const from = { ...viewRef.current }
+    const start = performance.now()
+    const step = () => {
+      const t = Math.min(1, (performance.now() - start) / duration)
+      const k = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+      const current = follow?.() ?? target
+      viewRef.current = {
+        x: from.x + (current.x - from.x) * k,
+        y: from.y + (current.y - from.y) * k,
+        scale: from.scale + (current.scale - from.scale) * k,
+      }
+      dirtyRef.current = true
+      if (t < 1) {
+        viewAnimationRef.current = requestAnimationFrame(step)
+      } else {
+        viewAnimationRef.current = null
+      }
+    }
+    step()
+  }
+
+  useEffect(() => () => cancelViewAnimation(), [])
+
+  // Canvas keeps every camera change inside the rAF loop: wheel and drag no
+  // longer re-render React, which is what made the SVG camera feel heavy.
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault()
+      cancelViewAnimation()
+      const { width, height } = sizeRef.current
+      const fit = fitBox(width, height)
+      const point = viewBoxPoint(event.offsetX, event.offsetY, fit)
+      const previous = viewRef.current
+      const scale = clamp(
+        previous.scale * Math.exp(-event.deltaY * 0.0015),
+        0.55,
+        3.4,
+      )
+      const ratio = scale / previous.scale
+      viewRef.current = {
+        scale,
+        x: point.x - (point.x - previous.x) * ratio,
+        y: point.y - (point.y - previous.y) * ratio,
+      }
+      dirtyRef.current = true
+    }
+
+    canvas.addEventListener('wheel', handleWheel, { passive: false })
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (entry) {
+        sizeRef.current = {
+          width: entry.contentRect.width,
+          height: entry.contentRect.height,
         }
       }
-      frame = requestAnimationFrame(step)
+      dirtyRef.current = true
+    })
+    observer.observe(canvas)
+    const rect = canvas.getBoundingClientRect()
+    sizeRef.current = { width: rect.width, height: rect.height }
+    const visibility = new IntersectionObserver((entries) => {
+      visibleRef.current = entries[0]?.isIntersecting ?? true
+      dirtyRef.current = true
+    })
+    visibility.observe(canvas)
+    return () => {
+      canvas.removeEventListener('wheel', handleWheel)
+      observer.disconnect()
+      visibility.disconnect()
     }
-    frame = requestAnimationFrame(step)
-    return () => cancelAnimationFrame(frame)
-  }, [reduceMotion])
+  }, [expanded])
 
-  const displayNodes = useMemo(() => {
-    const positioned = layout.nodes.map((node) => {
+  useEffect(() => {
+    if (!expanded) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [expanded])
+
+  function computeDisplayNodes(now: number, state: DrawState): LayoutNode[] {
+    const phase = state.reduceMotion ? 0 : now
+    const dragOwner = draggingOwnerRef.current
+    const offsets = dragOffsetsRef.current
+
+    const positioned = state.layout.nodes.map((node) => {
       const owner = node.holder.owner
-      const offset = dragOffsets[owner] ?? { x: 0, y: 0 }
-      if (owner === draggingOwner) {
+      const offset = offsets.get(owner) ?? ZERO_OFFSET
+      if (owner === dragOwner) {
         // Freeze drift under the pointer so the bubble tracks the cursor
         // exactly while it is being dragged.
         return { ...node, x: node.x + offset.x, y: node.y + offset.y }
       }
-      const drift = reduceMotion
-        ? { x: 0, y: 0 }
-        : driftOffset(owner, node.radius, motionPhase)
+      const drift = state.reduceMotion
+        ? ZERO_OFFSET
+        : driftOffset(owner, node.radius, phase)
       return {
         ...node,
         x: node.x + offset.x + drift.x,
@@ -620,9 +886,9 @@ export function WalletBubbleMap({
     // Other bubbles gently make room while a neighbour is dragged.
     return positioned.map((node) => {
       if (node.holder.owner === reaction.owner) return node
-      const dx = node.x - reaction.x
-      const dy = node.y - reaction.y
-      const distance = Math.hypot(dx, dy)
+      const deltaX = node.x - reaction.x
+      const deltaY = node.y - reaction.y
+      const distance = Math.hypot(deltaX, deltaY)
       if (distance < 0.001) return node
       const influence = node.radius + reaction.radius + 72
       const soft =
@@ -638,114 +904,757 @@ export function WalletBubbleMap({
       if (push < 0.05) return node
       return {
         ...node,
-        x: node.x + (dx / distance) * push,
-        y: node.y + (dy / distance) * push,
+        x: node.x + (deltaX / distance) * push,
+        y: node.y + (deltaY / distance) * push,
       }
     })
-  }, [layout, dragOffsets, draggingOwner, motionPhase, reduceMotion])
-
-  useEffect(() => {
-    displayNodesRef.current = displayNodes
-  }, [displayNodes])
-
-
-  const displayEdges = useMemo(
-    () => buildPlacedEdges(displayNodes, graph?.edges ?? [], graph, decimals),
-    [displayNodes, graph, decimals],
-  )
-
-  const holderByOwner = useMemo(
-    () => new Map(holders.map((holder) => [holder.owner, holder])),
-    [holders],
-  )
-  const colorByOwner = useMemo(
-    () => new Map(layout.nodes.map((node) => [node.holder.owner, node.color])),
-    [layout],
-  )
-
-  useEffect(() => {
-    if (lockedOwner && !holderByOwner.has(lockedOwner)) setLockedOwner(null)
-    if (selected && !holderByOwner.has(selected)) setSelected(null)
-  }, [holderByOwner, lockedOwner, selected])
-
-  function commitView(next: ViewState) {
-    viewRef.current = next
-    setView(next)
   }
 
-  function cancelViewAnimation() {
-    if (animationRef.current !== null) {
-      cancelAnimationFrame(animationRef.current)
-      animationRef.current = null
+  useEffect(() => {
+    let frame = 0
+    let lastPaint = 0
+
+    const loop = (now: number) => {
+      const canvas = canvasRef.current
+      const state = drawStateRef.current
+
+      if (canvas && state && !document.hidden && visibleRef.current) {
+        if (!state.reduceMotion) {
+          motionPhaseRef.current = now
+        }
+
+        const reaction = reactionRef.current
+        if (reaction) {
+          const target = draggingOwnerRef.current === reaction.owner ? 1 : 0
+          reaction.strength += (target - reaction.strength) * 0.22
+          if (reaction.strength < 0.02) reactionRef.current = null
+        }
+
+        const settle = settleRef.current
+        if (settle) {
+          settle.progress = Math.min(1, settle.progress + 0.14)
+          const k = 1 - Math.pow(1 - settle.progress, 3)
+          dragOffsetsRef.current.set(settle.owner, {
+            x: settle.fromX + (settle.toX - settle.fromX) * k,
+            y: settle.fromY + (settle.toY - settle.fromY) * k,
+          })
+          if (settle.progress >= 1) settleRef.current = null
+        }
+
+        const interacting =
+          dragRef.current !== null ||
+          reactionRef.current !== null ||
+          settleRef.current !== null ||
+          viewAnimationRef.current !== null
+        const animateSelection = !state.reduceMotion && state.selectionOwner !== null
+        const needsPaint =
+          dirtyRef.current ||
+          interacting ||
+          animateSelection ||
+          (!state.reduceMotion && !dragRef.current)
+        // Idle drift can breathe at 24fps; direct manipulation always paints
+        // at the display refresh rate.
+        const throttle = interacting ? 0 : 1000 / 24
+
+        if (needsPaint && now - lastPaint >= throttle) {
+          lastPaint = now
+          const nodes = computeDisplayNodes(now, state)
+          displayNodesRef.current = nodes
+          const placed = buildPlacedEdges(
+            nodes,
+            state.graph?.edges ?? [],
+            state.graph,
+            state.decimals,
+          )
+          const visible =
+            state.edgeMode === 'all'
+              ? placed
+              : placed.filter((edge) => edge.edge.kind === state.edgeMode)
+          displayEdgesRef.current = visible
+          drawScene(canvas, now, nodes, visible, state)
+          dirtyRef.current = false
+        }
+      }
+
+      frame = requestAnimationFrame(loop)
     }
+
+    frame = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(frame)
+  }, [])
+
+  function drawScene(
+    canvas: HTMLCanvasElement,
+    now: number,
+    nodes: LayoutNode[],
+    edges: PlacedEdge[],
+    state: DrawState,
+  ) {
+    const context = canvas.getContext('2d')
+    if (!context) return
+    // Cached by the ResizeObserver: reading layout every frame was forcing a
+    // synchronous style/layout flush inside the rAF loop.
+    let { width, height } = sizeRef.current
+    if (width < 2 || height < 2) {
+      const rect = canvas.getBoundingClientRect()
+      width = rect.width
+      height = rect.height
+      sizeRef.current = { width, height }
+    }
+    if (width < 2 || height < 2) return
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2)
+    const pixelWidth = Math.max(1, Math.round(width * dpr))
+    const pixelHeight = Math.max(1, Math.round(height * dpr))
+    if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+      canvas.width = pixelWidth
+      canvas.height = pixelHeight
+    }
+
+    context.setTransform(dpr, 0, 0, dpr, 0, 0)
+    // The warm background and vignette live in CSS so the canvas only repaints
+    // the moving map instead of three full-screen gradient fills per frame.
+    context.clearRect(0, 0, width, height)
+
+    const fit = fitBox(width, height)
+    const view = viewRef.current
+    const scale = view.scale || 1
+
+    // Ambient dots stay pinned to the viewBox like the old SVG layer.
+    for (const dot of state.ambientDots) {
+      context.beginPath()
+      context.arc(
+        fit.offsetX + dot.x * fit.scale,
+        fit.offsetY + dot.y * fit.scale,
+        Math.max(0.4, dot.r * fit.scale),
+        0,
+        TAU,
+      )
+      context.fillStyle = `rgba(232, 193, 130, ${dot.alpha})`
+      context.fill()
+    }
+
+    context.save()
+    context.translate(fit.offsetX, fit.offsetY)
+    context.scale(fit.scale, fit.scale)
+    context.translate(view.x, view.y)
+    context.scale(scale, scale)
+
+    const viewBoxLeft = -fit.offsetX / fit.scale
+    const viewBoxTop = -fit.offsetY / fit.scale
+    const viewBoxRight = (width - fit.offsetX) / fit.scale
+    const viewBoxBottom = (height - fit.offsetY) / fit.scale
+    const localLeft = (viewBoxLeft - view.x) / scale - 24
+    const localTop = (viewBoxTop - view.y) / scale - 24
+    const localRight = (viewBoxRight - view.x) / scale + 24
+    const localBottom = (viewBoxBottom - view.y) / scale + 24
+
+    context.strokeStyle = GRID_STROKE
+    context.lineWidth = 1
+    context.beginPath()
+    for (
+      let x = Math.floor(localLeft / GRID_STEP) * GRID_STEP;
+      x <= localRight;
+      x += GRID_STEP
+    ) {
+      context.moveTo(x, localTop)
+      context.lineTo(x, localBottom)
+    }
+    for (
+      let y = Math.floor(localTop / GRID_STEP) * GRID_STEP;
+      y <= localBottom;
+      y += GRID_STEP
+    ) {
+      context.moveTo(localLeft, y)
+      context.lineTo(localRight, y)
+    }
+    context.stroke()
+
+    for (const placed of edges) {
+      const edgeKey = placed.edge.key
+      const incident = state.selectionOwner
+        ? placed.edge.owners.includes(state.selectionOwner)
+        : true
+      const edgeActive =
+        state.hoveredEdge === edgeKey || state.selectedEdge === edgeKey
+      const dimmed =
+        (state.selectionOwner !== null && !incident) ||
+        (state.hoveredEdge !== null && !edgeActive)
+      const opacity = dimmed
+        ? 0.05
+        : edgeActive
+          ? 0.92
+          : state.selectionOwner !== null && incident
+            ? 0.72
+            : 0.4
+
+      context.lineCap = 'round'
+
+      if (edgeActive) {
+        context.save()
+        context.globalAlpha = 0.2
+        context.strokeStyle = placed.color
+        context.lineWidth = placed.width + 7
+        traceEdge(context, placed)
+        context.stroke()
+        context.restore()
+      }
+
+      const gradient = context.createLinearGradient(
+        placed.startX,
+        placed.startY,
+        placed.endX,
+        placed.endY,
+      )
+      gradient.addColorStop(0, rgba(placed.sourceColor, 0.55))
+      gradient.addColorStop(0.5, rgba(placed.targetColor, 0.9))
+      gradient.addColorStop(1, rgba(placed.targetColor, 0.55))
+
+      context.save()
+      context.globalAlpha = opacity
+      context.strokeStyle = gradient
+      context.lineWidth = placed.width
+      traceEdge(context, placed)
+      context.stroke()
+      context.restore()
+
+      const angle = Math.atan2(
+        placed.endY - placed.controlY,
+        placed.endX - placed.controlX,
+      )
+      context.save()
+      context.translate(placed.endX, placed.endY)
+      context.rotate(angle)
+      context.globalAlpha = opacity
+      context.beginPath()
+      context.moveTo(0, 0)
+      context.lineTo(-6.5, 3.1)
+      context.lineTo(-6.5, -3.1)
+      context.closePath()
+      context.fillStyle = rgba(placed.targetColor, 0.85)
+      context.fill()
+      context.restore()
+    }
+
+    const hubX = WIDTH / 2
+    const hubY = HEIGHT / 2
+    const orbitPulse = state.reduceMotion
+      ? 0.375
+      : 0.375 + Math.sin(now / 1400) * 0.075
+
+    context.beginPath()
+    context.arc(hubX, hubY, HUB_RADIUS + 12, 0, TAU)
+    context.strokeStyle = HUB_COLOR
+    context.globalAlpha = orbitPulse * 0.2
+    context.lineWidth = 2
+    context.stroke()
+
+    const hubGlow = context.createRadialGradient(
+      hubX,
+      hubY,
+      0,
+      hubX,
+      hubY,
+      HUB_RADIUS,
+    )
+    hubGlow.addColorStop(0, rgba(HUB_COLOR, 0.2))
+    hubGlow.addColorStop(1, rgba(HUB_COLOR, 0))
+    context.globalAlpha = 0.75
+    context.fillStyle = hubGlow
+    context.beginPath()
+    context.arc(hubX, hubY, HUB_RADIUS, 0, TAU)
+    context.fill()
+
+    context.globalAlpha = 1
+    context.beginPath()
+    context.arc(hubX, hubY, HUB_RADIUS, 0, TAU)
+    context.strokeStyle = HUB_COLOR
+    context.globalAlpha = 0.6
+    context.lineWidth = 2.5
+    context.stroke()
+    context.globalAlpha = 1
+
+    context.textAlign = 'center'
+    context.textBaseline = 'middle'
+    context.font = `700 16px ${FONT_SANS}`
+    context.fillStyle = 'rgba(255, 255, 255, 0.92)'
+    context.fillText('KLYTH', hubX, hubY - 6)
+    context.font = `600 10px ${FONT_SANS}`
+    context.fillStyle = 'rgba(255, 255, 255, 0.4)'
+    context.fillText(`${state.layout.nodes.length} holders`, hubX, hubY + 12)
+
+    for (const node of nodes) {
+      const isActive = state.selectionOwner === node.holder.owner
+      const isDimmed = state.selectionOwner !== null && !isActive
+      const tier = holderTier(node.holder.tier)
+      const label = displayLabel(node.holder)
+      const percentSize = clamp(node.radius * 0.3, 10, 17)
+      const nameCapacity = Math.floor((node.radius * 2 - 14) / 5.6)
+      const showNameInside = node.radius >= 36 && label.length <= nameCapacity
+      const nameY = showNameInside ? -6 : node.radius + 14
+      const percentY = showNameInside ? 10 : 0
+      const metaY = showNameInside ? node.radius + 12 : node.radius + 26
+      const strokeWidth = isActive ? 2.5 : node.radius >= 30 ? 1.5 : 1
+      const bodyAlpha = isActive ? 1 : 0.6
+      const pulse = state.reduceMotion ? 1 : 0.825 + Math.sin(now / 950) * 0.175
+      const baseAlpha = isDimmed ? 0.2 : 1
+
+      context.save()
+      context.globalAlpha = baseAlpha
+
+      if (isActive) {
+        context.beginPath()
+        context.arc(node.x, node.y, node.radius + 20, 0, TAU)
+        context.fillStyle = rgba(node.color, 0.08 * pulse)
+        context.fill()
+
+        context.beginPath()
+        context.arc(node.x, node.y, node.radius + 14, 0, TAU)
+        context.strokeStyle = rgba(node.color, 0.45 * pulse)
+        context.lineWidth = 3
+        context.stroke()
+      } else if (!isDimmed) {
+        const orbitAlpha = state.reduceMotion
+          ? 0.12
+          : 0.12 * (0.7 + 0.3 * Math.sin(now / 1100 + node.x * 0.01))
+        context.beginPath()
+        context.arc(node.x, node.y, node.radius + 8, 0, TAU)
+        context.strokeStyle = rgba(node.color, orbitAlpha)
+        context.lineWidth = 1
+        context.stroke()
+      }
+
+      const glow = context.createRadialGradient(
+        node.x,
+        node.y,
+        0,
+        node.x,
+        node.y,
+        node.radius,
+      )
+      glow.addColorStop(0, rgba(node.color, isActive ? 0.2 : 0.08))
+      glow.addColorStop(1, rgba(node.color, 0))
+      context.fillStyle = glow
+      context.beginPath()
+      context.arc(node.x, node.y, node.radius, 0, TAU)
+      context.fill()
+
+      context.globalAlpha = baseAlpha * bodyAlpha
+      context.beginPath()
+      context.arc(node.x, node.y, node.radius, 0, TAU)
+      context.strokeStyle = node.color
+      context.lineWidth = strokeWidth
+      context.stroke()
+
+      context.globalAlpha = baseAlpha
+      context.beginPath()
+      context.arc(node.x, node.y, node.radius * 0.25, 0, TAU)
+      context.fillStyle = rgba(node.color, 0.1)
+      context.fill()
+
+      context.textAlign = 'center'
+      context.textBaseline = 'middle'
+      context.fillStyle = '#ffffff'
+      context.font = `700 ${percentSize}px ${FONT_SANS}`
+      context.fillText(
+        formatHolderPercent(node.holder.percent),
+        node.x,
+        node.y + percentY,
+      )
+
+      context.fillStyle = node.color
+      context.font = `600 10px ${FONT_SANS}`
+      context.fillText(label, node.x, node.y + nameY)
+
+      context.fillStyle = 'rgba(255, 255, 255, 0.32)'
+      context.font = `500 9px ${FONT_MONO}`
+      context.fillText(
+        `${tier.emoji} ${tier.label}${
+          state.supernodes.has(node.holder.owner) ? ' · ⚡' : ''
+        }`,
+        node.x,
+        node.y + metaY,
+      )
+
+      context.restore()
+    }
+
+    context.restore()
   }
 
-  function animateView(
-    target: ViewState,
-    duration = 720,
-    follow?: () => ViewState | null,
-  ) {
-    cancelViewAnimation()
-    const from = viewRef.current
-    const start = performance.now()
-    const step = () => {
-      const t = Math.min(1, (performance.now() - start) / duration)
-      const k = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
-      const current = follow?.() ?? target
-      commitView({
-        x: from.x + (current.x - from.x) * k,
-        y: from.y + (current.y - from.y) * k,
-        scale: from.scale + (current.scale - from.scale) * k,
-      })
-      if (t < 1) {
-        animationRef.current = requestAnimationFrame(step)
-      } else {
-        animationRef.current = null
+  function localPointFromEvent(
+    event: ReactPointerEvent<HTMLCanvasElement> | WheelEvent,
+  ): { x: number; y: number } {
+    // `offsetX/offsetY` is already relative to the canvas, which avoids the
+    // per-event `getBoundingClientRect()` layout flush that made drag janky.
+    const native = 'nativeEvent' in event ? event.nativeEvent : event
+    const { width, height } = sizeRef.current
+    return toWorld(
+      viewBoxPoint(native.offsetX, native.offsetY, fitBox(width, height)),
+      viewRef.current,
+    )
+  }
+
+  function hitTestNode(point: { x: number; y: number }): LayoutNode | null {
+    const nodes = displayNodesRef.current
+    for (let index = nodes.length - 1; index >= 0; index -= 1) {
+      const node = nodes[index]
+      if (
+        Math.hypot(point.x - node.x, point.y - node.y) <=
+        node.radius + 2
+      ) {
+        return node
       }
     }
-    step()
+    return null
   }
 
-  useEffect(() => () => cancelViewAnimation(), [])
+  function hitTestEdge(point: { x: number; y: number }): PlacedEdge | null {
+    let best: PlacedEdge | null = null
+    let bestDistance = 8
+    for (const placed of displayEdgesRef.current) {
+      const distance = distanceToEdge(point.x, point.y, placed)
+      if (distance < bestDistance) {
+        bestDistance = distance
+        best = placed
+      }
+    }
+    return best
+  }
 
-  // React attaches wheel handlers passively, so zoom needs a native listener.
-  useEffect(() => {
-    const element = svgRef.current
-    if (!element) {
+  function hitTestHub(point: { x: number; y: number }): boolean {
+    return (
+      Math.hypot(point.x - WIDTH / 2, point.y - HEIGHT / 2) <= HUB_RADIUS + 12
+    )
+  }
+
+  function handlePointerDown(event: ReactPointerEvent<HTMLCanvasElement>) {
+    if (event.button !== 0) return
+    cancelViewAnimation()
+    settleRef.current = null
+
+    const point = localPointFromEvent(event)
+    const node = hitTestNode(point)
+    const edge = node ? null : hitTestEdge(point)
+    const hub = !node && !edge && hitTestHub(point)
+
+    if (!node && !edge && !hub) {
+      setSelected(null)
+      setLockedOwner(null)
+      setSelectedEdge(null)
+    }
+
+    const layoutNode = node ? layoutByOwner.get(node.holder.owner) ?? null : null
+    const originX = node && layoutNode ? node.x - layoutNode.x : 0
+    const originY = node && layoutNode ? node.y - layoutNode.y : 0
+    const { width, height } = sizeRef.current
+    const start = viewBoxPoint(
+      event.nativeEvent.offsetX,
+      event.nativeEvent.offsetY,
+      fitBox(width, height),
+    )
+
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: start.x,
+      startY: start.y,
+      originX: viewRef.current.x,
+      originY: viewRef.current.y,
+      moved: false,
+      nodeOwner: node?.holder.owner ?? null,
+      nodeOriginX: originX,
+      nodeOriginY: originY,
+      nodeX: originX,
+      nodeY: originY,
+    }
+
+    if (node && layoutNode) {
+      draggingOwnerRef.current = node.holder.owner
+      setHovered(null)
+      reactionRef.current = {
+        owner: node.holder.owner,
+        x: node.x,
+        y: node.y,
+        radius: node.radius,
+        strength: reactionRef.current?.strength ?? 0,
+      }
+    }
+
+    setDragging(true)
+    dirtyRef.current = true
+  }
+
+  function updateHover(event: ReactPointerEvent<HTMLCanvasElement>) {
+    const point = localPointFromEvent(event)
+    const node = hitTestNode(point)
+    const edge = node ? null : hitTestEdge(point)
+    const nextHovered = node?.holder.owner ?? null
+    const nextEdge = edge?.edge.key ?? null
+
+    setHovered((current) => (current === nextHovered ? current : nextHovered))
+    setHoveredEdge((current) => (current === nextEdge ? current : nextEdge))
+    if (node || edge) {
+      setPointer({ x: event.clientX, y: event.clientY })
+    }
+  }
+
+  function handlePointerMove(event: ReactPointerEvent<HTMLCanvasElement>) {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) {
+      updateHover(event)
       return
     }
 
-    const handleWheel = (event: WheelEvent) => {
-      event.preventDefault()
-      cancelViewAnimation()
-      const rect = element.getBoundingClientRect()
-      const point = svgPoint(event.clientX, event.clientY, rect)
-      const previous = viewRef.current
-      const scale = clamp(
-        previous.scale * Math.exp(-event.deltaY * 0.0015),
-        0.55,
-        3.4,
+    const { width, height } = sizeRef.current
+    const current = viewBoxPoint(
+      event.nativeEvent.offsetX,
+      event.nativeEvent.offsetY,
+      fitBox(width, height),
+    )
+    const deltaX = current.x - drag.startX
+    const deltaY = current.y - drag.startY
+
+    if (!drag.moved && Math.hypot(deltaX, deltaY) > 3) {
+      drag.moved = true
+      // Capture only once a real drag starts. Capturing on pointerdown retargets
+      // the follow-up click to the canvas root, which would swallow bubble clicks.
+      event.currentTarget.setPointerCapture(event.pointerId)
+    }
+    if (!drag.moved) return
+
+    if (drag.nodeOwner) {
+      const node = layoutByOwner.get(drag.nodeOwner)
+      if (!node) return
+      const scale = viewRef.current.scale || 1
+      const margin = node.radius + 10
+      const nextX = clamp(
+        drag.nodeOriginX + deltaX / scale,
+        margin - node.x,
+        WIDTH - margin - node.x,
       )
-      const ratio = scale / previous.scale
-      commitView({
-        scale,
-        x: point.x - (point.x - previous.x) * ratio,
-        y: point.y - (point.y - previous.y) * ratio,
-      })
+      const nextY = clamp(
+        drag.nodeOriginY + deltaY / scale,
+        margin - node.y,
+        HEIGHT - margin - node.y,
+      )
+      dragOffsetsRef.current.set(drag.nodeOwner, { x: nextX, y: nextY })
+      reactionRef.current = {
+        owner: drag.nodeOwner,
+        x: node.x + nextX,
+        y: node.y + nextY,
+        radius: node.radius,
+        strength: reactionRef.current?.strength ?? 0,
+      }
+      drag.nodeX = nextX
+      drag.nodeY = nextY
+      setHovered(null)
+    } else {
+      viewRef.current = {
+        ...viewRef.current,
+        x: clamp(drag.originX + deltaX, -WIDTH * 0.45, WIDTH * 0.45),
+        y: clamp(drag.originY + deltaY, -HEIGHT * 0.45, HEIGHT * 0.45),
+      }
     }
 
-    element.addEventListener('wheel', handleWheel, { passive: false })
-    return () => element.removeEventListener('wheel', handleWheel)
-  }, [expanded])
+    dirtyRef.current = true
+  }
 
-  useEffect(() => {
-    if (!expanded) return
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.body.style.overflow = previousOverflow
+  function finishDrag(
+    event: ReactPointerEvent<HTMLCanvasElement>,
+    allowClick: boolean,
+  ) {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    dragRef.current = null
+    setDragging(false)
+
+    if (drag.nodeOwner) {
+      if (drag.moved) {
+        const resolved = resolveDropOffset(
+          drag.nodeOwner,
+          drag.nodeX,
+          drag.nodeY,
+        )
+        if (
+          Math.abs(resolved.x - drag.nodeX) > 0.5 ||
+          Math.abs(resolved.y - drag.nodeY) > 0.5
+        ) {
+          // Ease the collision nudge instead of teleporting on drop.
+          settleRef.current = {
+            owner: drag.nodeOwner,
+            fromX: drag.nodeX,
+            fromY: drag.nodeY,
+            toX: resolved.x,
+            toY: resolved.y,
+            progress: 0,
+          }
+        }
+      }
+      draggingOwnerRef.current = null
     }
-  }, [expanded])
+
+    if (!drag.moved && allowClick) {
+      if (drag.nodeOwner) {
+        selectOwner(drag.nodeOwner)
+      } else {
+        const point = localPointFromEvent(event)
+        if (hitTestHub(point)) {
+          resetMap()
+        } else {
+          const edge = hitTestEdge(point)
+          if (edge) {
+            setSelectedEdge((current) =>
+              current === edge.edge.key ? null : edge.edge.key,
+            )
+          } else {
+            setSelected(null)
+            setLockedOwner(null)
+            setSelectedEdge(null)
+          }
+        }
+      }
+    }
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    dirtyRef.current = true
+  }
+
+  function handlePointerUp(event: ReactPointerEvent<HTMLCanvasElement>) {
+    finishDrag(event, true)
+  }
+
+  function handlePointerCancel(event: ReactPointerEvent<HTMLCanvasElement>) {
+    finishDrag(event, false)
+  }
+
+  function handlePointerLeave() {
+    if (dragRef.current) return
+    setHovered(null)
+    setHoveredEdge(null)
+  }
+
+  function resolveDropOffset(
+    owner: string,
+    x: number,
+    y: number,
+  ): { x: number; y: number } {
+    const node = layoutByOwner.get(owner)
+    if (!node) return { x, y }
+    const resolved = { x, y }
+    // Nudge the dropped bubble out of any overlap so releasing it on top of a
+    // neighbour does not leave two bubbles stacked forever.
+    for (let pass = 0; pass < 8; pass += 1) {
+      let moved = false
+      for (const other of layout.nodes) {
+        if (other.holder.owner === owner) continue
+        const otherOffset =
+          dragOffsetsRef.current.get(other.holder.owner) ?? ZERO_OFFSET
+        const drift = reduceMotion
+          ? ZERO_OFFSET
+          : driftOffset(
+              other.holder.owner,
+              other.radius,
+              motionPhaseRef.current,
+            )
+        const otherX = other.x + otherOffset.x + drift.x
+        const otherY = other.y + otherOffset.y + drift.y
+        const centerX = node.x + resolved.x
+        const centerY = node.y + resolved.y
+        let deltaX = centerX - otherX
+        let deltaY = centerY - otherY
+        const distance = Math.hypot(deltaX, deltaY)
+        const minimum = node.radius + other.radius + 8
+        if (distance >= minimum) continue
+        if (distance < 0.001) {
+          deltaX = 1
+          deltaY = 0
+        }
+        const length = Math.hypot(deltaX, deltaY) || 1
+        resolved.x += (deltaX / length) * (minimum - distance)
+        resolved.y += (deltaY / length) * (minimum - distance)
+        moved = true
+      }
+      if (!moved) break
+    }
+    const margin = node.radius + 10
+    resolved.x = clamp(resolved.x, margin - node.x, WIDTH - margin - node.x)
+    resolved.y = clamp(resolved.y, margin - node.y, HEIGHT - margin - node.y)
+    return resolved
+  }
+
+  function zoomBy(factor: number) {
+    cancelViewAnimation()
+    const previous = viewRef.current
+    const scale = clamp(previous.scale * factor, 0.55, 3.4)
+    const ratio = scale / previous.scale
+    viewRef.current = {
+      scale,
+      x: WIDTH / 2 - (WIDTH / 2 - previous.x) * ratio,
+      y: HEIGHT / 2 - (HEIGHT / 2 - previous.y) * ratio,
+    }
+    dirtyRef.current = true
+  }
+
+  function focusOwner(owner: string) {
+    const node = layoutByOwner.get(owner)
+    if (!node) return
+    const targetScale = node.radius >= 44 ? 1.18 : 1.36
+    // Keep the focused bubble centred while drift is still moving it.
+    const follow = () => {
+      const live = displayNodesRef.current.find(
+        (item) => item.holder.owner === owner,
+      )
+      if (!live) return null
+      return {
+        scale: targetScale,
+        x: WIDTH / 2 - live.x * targetScale,
+        y: HEIGHT / 2 - live.y * targetScale,
+      }
+    }
+    const target = follow()
+    if (!target) return
+    animateView(target, 760, follow)
+  }
+
+  function resetMap() {
+    setSelected(null)
+    setLockedOwner(null)
+    setSelectedEdge(null)
+    setHovered(null)
+    setHoveredEdge(null)
+    draggingOwnerRef.current = null
+    reactionRef.current = null
+    settleRef.current = null
+    dragOffsetsRef.current.clear()
+    animateView({ x: 0, y: 0, scale: 1 }, 640)
+  }
+
+  function selectOwner(owner: string) {
+    if (lockedOwner === owner) {
+      resetMap()
+      return
+    }
+    setSelected(owner)
+    setLockedOwner(owner)
+    setSelectedEdge(null)
+    focusOwner(owner)
+  }
+
+  function toggleLock() {
+    if (lockedOwner) {
+      setLockedOwner(null)
+      setSelected(null)
+      return
+    }
+    const next = hovered ?? selected
+    if (next) {
+      setLockedOwner(next)
+      setSelected(next)
+      focusOwner(next)
+    }
+  }
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -787,56 +1696,6 @@ export function WalletBubbleMap({
     return () => window.removeEventListener('keydown', handleKey)
   }, [expanded, hovered, lockedOwner, selected, selectedEdge])
 
-  const edgeStats = useMemo(() => {
-    const stats = new Map<string, { count: number; volumeRaw: bigint; peers: Set<string> }>()
-    for (const edge of graph?.edges ?? []) {
-      for (const [owner, peer] of [
-        [edge.owners[0], edge.owners[1]],
-        [edge.owners[1], edge.owners[0]],
-      ]) {
-        if (!holderByOwner.has(owner)) continue
-        const entry = stats.get(owner) ?? { count: 0, volumeRaw: 0n, peers: new Set<string>() }
-        entry.count += edge.count
-        entry.volumeRaw += BigInt(edge.amountRaw)
-        entry.peers.add(peer)
-        stats.set(owner, entry)
-      }
-    }
-    return stats
-  }, [graph, holderByOwner])
-
-  // Selection drives map emphasis; hover only drives the tooltip so the map
-  // never dims just because the pointer crossed a bubble.
-  const selectionOwner = lockedOwner ?? selected
-  const tooltipOwner = dragging ? null : hovered ?? selectionOwner
-  const activeNode =
-    layout.nodes.find((node) => node.holder.owner === tooltipOwner) ?? null
-  const activeTrades = activeNode ? (tradeCounts.get(activeNode.holder.owner) ?? 0) : 0
-  const activeEdge =
-    (hoveredEdge ?? selectedEdge)
-      ? graph?.edges.find((edge) => edge.key === (hoveredEdge ?? selectedEdge)) ?? null
-      : null
-
-  const visibleEdges = displayEdges.filter((placed) => {
-    if (edgeMode === 'all') return true
-    return edgeMode === 'wallet'
-      ? placed.edge.kind === 'wallet'
-      : placed.edge.kind === 'curve'
-  })
-
-  const walletEdgeCount = graph?.edges.filter((edge) => edge.kind === 'wallet').length ?? 0
-
-  // Show the wallet-only view when real wallet-to-wallet links exist. If the
-  // recent trace only contains curve flows, fall back to all flows once so the
-  // map never looks empty on a fresh scan.
-  useEffect(() => {
-    if (!graph || autoShiftedRef.current || graph.edges.length === 0) return
-    autoShiftedRef.current = true
-    if (walletEdgeCount === 0) {
-      setEdgeMode('all')
-    }
-  }, [graph, walletEdgeCount])
-
   const totalTrades = useMemo(
     () => Array.from(tradeCounts.values()).reduce((sum, count) => sum + count, 0),
     [tradeCounts],
@@ -864,342 +1723,7 @@ export function WalletBubbleMap({
     return result
   }, [graph, holders])
 
-  const allBubbleColors = useMemo(() => {
-    const colors = new Set<string>([HUB_COLOR])
-    for (const node of layout.nodes) colors.add(node.color)
-    return Array.from(colors)
-  }, [layout])
-
-  const edgeGradients = useMemo(
-    () =>
-      visibleEdges.map((placed) => ({
-        id: edgeGradientId(placed.edge.key),
-        from: placed.sourceColor,
-        to: placed.targetColor,
-        x1: placed.startX,
-        y1: placed.startY,
-        x2: placed.endX,
-        y2: placed.endY,
-      })),
-    [visibleEdges],
-  )
-
-  const markerColors = useMemo(
-    () =>
-      Array.from(
-        new Set([
-          ...visibleEdges.map((placed) => placed.targetColor),
-          DEFAULT_EDGE_COLOR,
-        ]),
-      ),
-    [visibleEdges],
-  )
-
-  const ambientDots = useMemo(
-    () =>
-      Array.from({ length: 34 }, (_, index) => {
-        const hash = hashString(`klyth-ambient-${index}`)
-        return {
-          key: `ambient-${index}`,
-          x: hash % WIDTH,
-          y: (hash >>> 10) % HEIGHT,
-          r: 0.6 + ((hash >>> 20) % 26) / 10,
-          alpha: 0.05 + ((hash >>> 24) % 10) / 100,
-        }
-      }),
-    [],
-  )
-
-  // The 34 background dots never change, so memoise the whole group instead
-  // of reconciling it on every drift tick.
-  const ambientLayer = useMemo(
-    () => (
-      <g className="wallet-map__ambient" aria-hidden="true">
-        {ambientDots.map((dot) => (
-          <circle
-            key={dot.key}
-            cx={dot.x}
-            cy={dot.y}
-            r={dot.r}
-            fill={`rgba(232, 193, 130, ${dot.alpha})`}
-            className="wallet-map__ambient-dot"
-          />
-        ))}
-      </g>
-    ),
-    [ambientDots],
-  )
-
-  function zoomBy(factor: number) {
-    cancelViewAnimation()
-    const previous = viewRef.current
-    const scale = clamp(previous.scale * factor, 0.55, 3.4)
-    const ratio = scale / previous.scale
-    commitView({
-      scale,
-      x: WIDTH / 2 - (WIDTH / 2 - previous.x) * ratio,
-      y: HEIGHT / 2 - (HEIGHT / 2 - previous.y) * ratio,
-    })
-  }
-
-  function focusOwner(owner: string) {
-    const node = layout.nodes.find((item) => item.holder.owner === owner)
-    if (!node) return
-    const scale = node.radius >= 44 ? 1.18 : 1.36
-    // Keep the focused bubble centred while drift is still moving it.
-    const follow = () => {
-      const live = displayNodesRef.current.find(
-        (item) => item.holder.owner === owner,
-      )
-      if (!live) return null
-      return {
-        scale,
-        x: WIDTH / 2 - live.x * scale,
-        y: HEIGHT / 2 - live.y * scale,
-      }
-    }
-    const target = follow()
-    if (!target) return
-    animateView(target, 760, follow)
-  }
-
-  function resetMap() {
-    setSelected(null)
-    setLockedOwner(null)
-    setSelectedEdge(null)
-    setHovered(null)
-    setHoveredEdge(null)
-    setDraggingOwner(null)
-    draggingOwnerRef.current = null
-    reactionRef.current = null
-    settleRef.current = null
-    setDragOffsets({})
-    animateView({ x: 0, y: 0, scale: 1 }, 640)
-  }
-
-  function selectOwner(owner: string) {
-    if (lockedOwner === owner) {
-      resetMap()
-      return
-    }
-    setSelected(owner)
-    setLockedOwner(owner)
-    setSelectedEdge(null)
-    focusOwner(owner)
-  }
-
-  function toggleLock() {
-    if (lockedOwner) {
-      setLockedOwner(null)
-      setSelected(null)
-      return
-    }
-    const next = hovered ?? selected
-    if (next) {
-      setLockedOwner(next)
-      setSelected(next)
-      focusOwner(next)
-    }
-  }
-
-  function resolveDropOffset(
-    owner: string,
-    x: number,
-    y: number,
-  ): { x: number; y: number } {
-    const node = layout.nodes.find((item) => item.holder.owner === owner)
-    if (!node) return { x, y }
-    const resolved = { x, y }
-    // Nudge the dropped bubble out of any overlap so releasing it on top of a
-    // neighbour does not leave two bubbles stacked forever.
-    for (let pass = 0; pass < 8; pass += 1) {
-      let moved = false
-      for (const other of layout.nodes) {
-        if (other.holder.owner === owner) continue
-        const otherOffset = dragOffsets[other.holder.owner] ?? { x: 0, y: 0 }
-        const drift = reduceMotion
-          ? { x: 0, y: 0 }
-          : driftOffset(
-              other.holder.owner,
-              other.radius,
-              motionPhaseRef.current,
-            )
-        const otherX = other.x + otherOffset.x + drift.x
-        const otherY = other.y + otherOffset.y + drift.y
-        const centerX = node.x + resolved.x
-        const centerY = node.y + resolved.y
-        let dx = centerX - otherX
-        let dy = centerY - otherY
-        const distance = Math.hypot(dx, dy)
-        const minimum = node.radius + other.radius + 8
-        if (distance >= minimum) continue
-        if (distance < 0.001) {
-          dx = 1
-          dy = 0
-        }
-        const length = Math.hypot(dx, dy) || 1
-        resolved.x += (dx / length) * (minimum - distance)
-        resolved.y += (dy / length) * (minimum - distance)
-        moved = true
-      }
-      if (!moved) break
-    }
-    const margin = node.radius + 10
-    resolved.x = clamp(resolved.x, margin - node.x, WIDTH - margin - node.x)
-    resolved.y = clamp(resolved.y, margin - node.y, HEIGHT - margin - node.y)
-    return resolved
-  }
-
-  function handlePointerDown(event: ReactPointerEvent<SVGSVGElement>) {
-    if (event.button !== 0) return
-    cancelViewAnimation()
-    settleRef.current = null
-    const target = event.target as Element | null
-    const nodeOwner =
-      target?.closest('.wallet-map__node')?.getAttribute('data-owner') ?? null
-    if (!target?.closest('.wallet-map__node, .wallet-map__hub, .wallet-map__edge-hit')) {
-      setSelected(null)
-      setLockedOwner(null)
-      setSelectedEdge(null)
-    }
-    const rect = event.currentTarget.getBoundingClientRect()
-    const start = svgPoint(event.clientX, event.clientY, rect)
-    const existingOffset = nodeOwner ? dragOffsets[nodeOwner] : null
-    const node = nodeOwner
-      ? layout.nodes.find((item) => item.holder.owner === nodeOwner)
-      : null
-    // Bake the current drift into the drag origin so freezing the idle motion
-    // does not make the bubble jump on pointerdown.
-    const drift =
-      nodeOwner && node && !reduceMotion
-        ? driftOffset(nodeOwner, node.radius, motionPhaseRef.current)
-        : { x: 0, y: 0 }
-    const originX = (existingOffset?.x ?? 0) + drift.x
-    const originY = (existingOffset?.y ?? 0) + drift.y
-    dragRef.current = {
-      pointerId: event.pointerId,
-      startX: start.x,
-      startY: start.y,
-      originX: viewRef.current.x,
-      originY: viewRef.current.y,
-      moved: false,
-      nodeOwner,
-      nodeOriginX: originX,
-      nodeOriginY: originY,
-      nodeX: originX,
-      nodeY: originY,
-    }
-    if (nodeOwner && node) {
-      setDraggingOwner(nodeOwner)
-      draggingOwnerRef.current = nodeOwner
-      setHovered(null)
-      reactionRef.current = {
-        owner: nodeOwner,
-        x: node.x + originX,
-        y: node.y + originY,
-        radius: node.radius,
-        strength: reactionRef.current?.strength ?? 0,
-      }
-    }
-    setDragging(true)
-  }
-
-  function handlePointerMove(event: ReactPointerEvent<SVGSVGElement>) {
-    const drag = dragRef.current
-    if (!drag || drag.pointerId !== event.pointerId) return
-    const rect = event.currentTarget.getBoundingClientRect()
-    const current = svgPoint(event.clientX, event.clientY, rect)
-    const deltaX = current.x - drag.startX
-    const deltaY = current.y - drag.startY
-    if (!drag.moved && Math.hypot(deltaX, deltaY) > 3) {
-      drag.moved = true
-      // Capture only once a real drag starts. Capturing on pointerdown retargets
-      // the follow-up click to the SVG root, which would swallow bubble clicks.
-      event.currentTarget.setPointerCapture(event.pointerId)
-    }
-    if (!drag.moved) return
-    if (drag.nodeOwner) {
-      const node = layout.nodes.find(
-        (item) => item.holder.owner === drag.nodeOwner,
-      )
-      if (!node) return
-      const scale = viewRef.current.scale || 1
-      const margin = node.radius + 10
-      const nextX = clamp(
-        drag.nodeOriginX + deltaX / scale,
-        margin - node.x,
-        WIDTH - margin - node.x,
-      )
-      const nextY = clamp(
-        drag.nodeOriginY + deltaY / scale,
-        margin - node.y,
-        HEIGHT - margin - node.y,
-      )
-      reactionRef.current = {
-        owner: drag.nodeOwner,
-        x: node.x + nextX,
-        y: node.y + nextY,
-        radius: node.radius,
-        strength: reactionRef.current?.strength ?? 0,
-      }
-      drag.nodeX = nextX
-      drag.nodeY = nextY
-      setDragOffsets((currentOffsets) => ({
-        ...currentOffsets,
-        [drag.nodeOwner as string]: { x: nextX, y: nextY },
-      }))
-      return
-    }
-    commitView({
-      ...viewRef.current,
-      x: clamp(drag.originX + deltaX, -WIDTH * 0.45, WIDTH * 0.45),
-      y: clamp(drag.originY + deltaY, -HEIGHT * 0.45, HEIGHT * 0.45),
-    })
-  }
-
-  function handlePointerUp(event: ReactPointerEvent<SVGSVGElement>) {
-    const drag = dragRef.current
-    if (drag?.pointerId === event.pointerId) {
-      suppressClickRef.current = drag.moved
-      if (drag.moved) {
-        window.setTimeout(() => {
-          suppressClickRef.current = false
-        }, 0)
-      }
-      dragRef.current = null
-      setDragging(false)
-      if (drag.nodeOwner) {
-        if (drag.moved) {
-          const resolved = resolveDropOffset(
-            drag.nodeOwner,
-            drag.nodeX,
-            drag.nodeY,
-          )
-          if (
-            Math.abs(resolved.x - drag.nodeX) > 0.5 ||
-            Math.abs(resolved.y - drag.nodeY) > 0.5
-          ) {
-            // Ease the collision nudge instead of teleporting on drop.
-            settleRef.current = {
-              owner: drag.nodeOwner,
-              fromX: drag.nodeX,
-              fromY: drag.nodeY,
-              toX: resolved.x,
-              toY: resolved.y,
-              progress: 0,
-            }
-          }
-        }
-        setDraggingOwner(null)
-        draggingOwnerRef.current = null
-      }
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId)
-      }
-    }
-  }
-
-  const activeNodeColor = activeNode ? colorByOwner.get(activeNode.holder.owner) ?? null : null
+  const activeNodeColor = activeNode ? activeNode.color : null
   const activeStats = activeNode ? edgeStats.get(activeNode.holder.owner) : null
   const activeCluster = activeNode
     ? graph?.memberByOwner[activeNode.holder.owner]
@@ -1210,7 +1734,7 @@ export function WalletBubbleMap({
   const activeIsSupernode = activeTransfers >= SUPERNODE_TRANSFERS
 
   const edgeColor = activeEdge
-    ? visibleEdges.find((item) => item.edge.key === activeEdge.key)?.color ??
+    ? layout.edges.find((item) => item.edge.key === activeEdge.key)?.color ??
       DEFAULT_EDGE_COLOR
     : DEFAULT_EDGE_COLOR
 
@@ -1258,375 +1782,48 @@ export function WalletBubbleMap({
     })),
   ]
 
-  const canvas = (
+  const mapView = (
     <div className="wallet-map__canvas">
-      <svg
-        ref={svgRef}
-        className={`wallet-map__svg${dragging ? ' wallet-map__svg--dragging' : ''}`}
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        preserveAspectRatio="xMidYMid meet"
+      <canvas
+        ref={canvasRef}
+        className={`wallet-map__gl${dragging ? ' wallet-map__gl--dragging' : ''}`}
         role="img"
         aria-label="KLYTH holder bubble map with on-chain transfer links"
+        tabIndex={0}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
+        onPointerLeave={handlePointerLeave}
       >
-        <defs>
-          <radialGradient id="wallet-map-ambient" cx="50%" cy="46%" r="68%">
-            <stop offset="0%" stopColor="#2b2114" stopOpacity="0.6" />
-            <stop offset="52%" stopColor="#15110c" stopOpacity="0.4" />
-            <stop offset="100%" stopColor="#0b0a09" stopOpacity="0" />
-          </radialGradient>
-          <radialGradient id="wallet-map-vignette" cx="50%" cy="50%" r="74%">
-            <stop offset="58%" stopColor="#0b0a09" stopOpacity="0" />
-            <stop offset="100%" stopColor="#0b0a09" stopOpacity="0.72" />
-          </radialGradient>
-          <pattern
-            id="wallet-map-grid"
-            width="40"
-            height="40"
-            patternUnits="userSpaceOnUse"
-          >
-            <path
-              d="M 40 0 L 0 0 0 40"
-              fill="none"
-              stroke="rgba(224, 166, 75, 0.07)"
-              strokeWidth="1"
-            />
-          </pattern>
-          {allBubbleColors.map((color) => {
-            const key = hexKey(color)
-            return (
-              <radialGradient
-                key={`glow-${key}`}
-                id={`wallet-map-glow-${key}`}
-                cx="50%"
-                cy="50%"
-                r="50%"
-              >
-                <stop offset="0%" stopColor={color} stopOpacity="0.2" />
-                <stop offset="100%" stopColor={color} stopOpacity="0" />
-              </radialGradient>
-            )
-          })}
-          {edgeGradients.map((gradient) => (
-            <linearGradient
-              key={gradient.id}
-              id={gradient.id}
-              gradientUnits="userSpaceOnUse"
-              x1={gradient.x1}
-              y1={gradient.y1}
-              x2={gradient.x2}
-              y2={gradient.y2}
-            >
-              <stop offset="0%" stopColor={gradient.from} stopOpacity="0.55" />
-              <stop offset="50%" stopColor={gradient.to} stopOpacity="0.9" />
-              <stop offset="100%" stopColor={gradient.to} stopOpacity="0.55" />
-            </linearGradient>
-          ))}
-          {markerColors.map((color) => (
-            <marker
-              key={color}
-              id={`wallet-map-arrow-${hexKey(color)}`}
-              viewBox="0 0 6 6"
-              refX="5"
-              refY="3"
-              markerWidth="6.5"
-              markerHeight="6.5"
-              markerUnits="userSpaceOnUse"
-              orient="auto-start-reverse"
-            >
-              <path d="M 0 0 L 6 3 L 0 6 z" fill={color} fillOpacity="0.85" />
-            </marker>
-          ))}
-        </defs>
+        KLYTH holder bubble map with on-chain transfer links
+      </canvas>
 
-        <rect width={WIDTH} height={HEIGHT} fill="#0b0a09" />
-
-        {ambientLayer}
-
-        <g transform={`translate(${view.x} ${view.y}) scale(${view.scale})`}>
-          <rect
-            x={-WIDTH}
-            y={-HEIGHT}
-            width={WIDTH * 3}
-            height={HEIGHT * 3}
-            fill="url(#wallet-map-grid)"
-          />
-          <rect
-            x={-WIDTH}
-            y={-HEIGHT}
-            width={WIDTH * 3}
-            height={HEIGHT * 3}
-            fill="url(#wallet-map-ambient)"
-          />
-
-          {visibleEdges.map((placed) => {
-            const incident =
-              selectionOwner !== null ? placed.edge.owners.includes(selectionOwner) : true
-            const edgeActive = hoveredEdge === placed.edge.key || selectedEdge === placed.edge.key
-            const dimmed =
-              (selectionOwner !== null && !incident) ||
-              (hoveredEdge !== null && !edgeActive)
-            const opacity = dimmed
-              ? 0.05
-              : edgeActive
-                ? 0.92
-                : selectionOwner !== null && incident
-                  ? 0.72
-                  : 0.4
-
-            return (
-              <g key={`edge-${placed.edge.key}`}>
-                {edgeActive ? (
-                  <path
-                    d={placed.path}
-                    fill="none"
-                    stroke={placed.color}
-                    strokeWidth={placed.width + 7}
-                    strokeOpacity={0.2}
-                    strokeLinecap="round"
-                  />
-                ) : null}
-                <path
-                  className={`wallet-map__edge${dimmed ? ' wallet-map__edge--dimmed' : ''}`}
-                  d={placed.path}
-                  fill="none"
-                  stroke={`url(#${edgeGradientId(placed.edge.key)})`}
-                  strokeWidth={placed.width}
-                  strokeOpacity={opacity}
-                  strokeLinecap="round"
-                  markerEnd={`url(#wallet-map-arrow-${hexKey(placed.targetColor)})`}
-                >
-                  <title>
-                    {`${shortenAddress(placed.edge.from, 6, 4)} → ${shortenAddress(
-                      placed.edge.to,
-                      6,
-                      4,
-                    )}: ${placed.edge.amount} KLYTH across ${placed.edge.count} transfer${
-                      placed.edge.count === 1 ? '' : 's'
-                    }`}
-                  </title>
-                </path>
-                <path
-                  className="wallet-map__edge-hit"
-                  d={placed.path}
-                  fill="none"
-                  stroke="transparent"
-                  strokeWidth={16}
-                  onPointerEnter={(event) => {
-                    setHoveredEdge(placed.edge.key)
-                    setPointer({ x: event.clientX, y: event.clientY })
-                  }}
-                  onPointerMove={(event) =>
-                    setPointer({ x: event.clientX, y: event.clientY })
-                  }
-                  onPointerLeave={() => setHoveredEdge(null)}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    if (suppressClickRef.current) return
-                    setSelectedEdge((current) =>
-                      current === placed.edge.key ? null : placed.edge.key,
-                    )
-                  }}
-                />
-              </g>
-            )
-          })}
-
-          <g
-            className="wallet-map__hub"
-            transform={`translate(${WIDTH / 2} ${HEIGHT / 2})`}
-            role="button"
-            tabIndex={0}
-            aria-label={`KLYTH hub, ${holders.length} holders`}
-            onClick={resetMap}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault()
-                resetMap()
-              }
-            }}
-          >
-            <circle
-              className="wallet-map__hub-orbit"
-              r={HUB_RADIUS + 12}
-              fill="none"
-              stroke={HUB_COLOR}
-              strokeOpacity={0.2}
-              strokeWidth={2}
-              aria-hidden="true"
-            />
-            <circle
-              r={HUB_RADIUS}
-              fill={`url(#wallet-map-glow-${hexKey(HUB_COLOR)})`}
-              opacity={0.75}
-              aria-hidden="true"
-            />
-            <circle
-              r={HUB_RADIUS}
-              fill="none"
-              stroke={HUB_COLOR}
-              strokeOpacity={0.6}
-              strokeWidth={2.5}
-            />
-            <text y={-6} className="wallet-map__hub-name">
-              KLYTH
-            </text>
-            <text y={12} className="wallet-map__hub-sub">
-              {holders.length} holders
-            </text>
-          </g>
-
-          {displayNodes.map((node) => {
-            const isActive = selectionOwner === node.holder.owner
-            const isDimmed = selectionOwner !== null && !isActive
+      <div className="wallet-map__a11y">
+        <p>
+          Holder bubbles. Use the controls to zoom, or activate a wallet below
+          to focus its bubble.
+        </p>
+        <ul>
+          {layout.nodes.map((node) => {
             const tier = holderTier(node.holder.tier)
-            const percentSize = clamp(node.radius * 0.3, 10, 17)
-            const label = displayLabel(node.holder)
-            // Keep the name inside only when the bubble is wide enough for the
-            // actual label; long role names move below the bubble instead.
-            const nameCapacity = Math.floor((node.radius * 2 - 14) / 5.6)
-            const showNameInside = node.radius >= 36 && label.length <= nameCapacity
-            const transfers =
-              (edgeStats.get(node.holder.owner)?.count ?? 0) +
-              (tradeCounts.get(node.holder.owner) ?? 0)
-            const isSupernode = transfers >= SUPERNODE_TRANSFERS
-            const nameY = showNameInside ? -6 : node.radius + 14
-            const percentY = showNameInside ? 10 : 0
-            const metaY = showNameInside ? node.radius + 12 : node.radius + 26
-            const key = hexKey(node.color)
-            const strokeWidth = isActive ? 2.5 : node.radius >= 30 ? 1.5 : 1
-            const bodyOpacity = isActive ? 1 : 0.6
-
             return (
-              <g
-                key={node.holder.owner}
-                className={`wallet-map__node${isActive ? ' wallet-map__node--active' : ''}${
-                  lockedOwner === node.holder.owner ? ' wallet-map__node--locked' : ''
-                }`}
-                transform={`translate(${node.x} ${node.y})`}
-                opacity={isDimmed ? 0.2 : 1}
-                data-owner={node.holder.owner}
-                role="button"
-                tabIndex={0}
-                aria-label={`${tier.emoji} ${tier.label} ${node.holder.label} ${shortenAddress(
-                  node.holder.owner,
-                  4,
-                  4,
-                )}, ${formatHolderPercent(node.holder.percent)} of supply`}
-                onPointerEnter={(event) => {
-                  setHovered(node.holder.owner)
-                  setPointer({ x: event.clientX, y: event.clientY })
-                }}
-                onPointerMove={(event) =>
-                  setPointer({ x: event.clientX, y: event.clientY })
-                }
-                onPointerLeave={() => setHovered(null)}
-                onFocus={() => setHovered(node.holder.owner)}
-                onBlur={() => setHovered(null)}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  if (suppressClickRef.current) return
-                  selectOwner(node.holder.owner)
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault()
-                    selectOwner(node.holder.owner)
-                  }
-                }}
-              >
-                {isActive ? (
-                  <>
-                    <circle
-                      className="wallet-map__node-halo"
-                      r={node.radius + 20}
-                      fill={node.color}
-                      fillOpacity={0.08}
-                      aria-hidden="true"
-                    />
-                    <circle
-                      className="wallet-map__node-selection"
-                      r={node.radius + 14}
-                      fill="none"
-                      stroke={node.color}
-                      strokeOpacity={0.45}
-                      strokeWidth={3}
-                      aria-hidden="true"
-                    />
-                  </>
-                ) : !isDimmed ? (
-                  <circle
-                    className="wallet-map__node-orbit"
-                    r={node.radius + 8}
-                    fill="none"
-                    stroke={node.color}
-                    strokeOpacity={0.12}
-                    strokeWidth={1}
-                    aria-hidden="true"
-                  />
-                ) : null}
-                <circle
-                  r={node.radius}
-                  fill={`url(#wallet-map-glow-${key})`}
-                  opacity={isActive ? 1 : 0.4}
-                  aria-hidden="true"
-                />
-                <circle
-                  className="wallet-map__bubble-body"
-                  r={node.radius}
-                  fill="none"
-                  stroke={node.color}
-                  strokeOpacity={bodyOpacity}
-                  strokeWidth={strokeWidth}
-                />
-                <circle
-                  r={node.radius * 0.25}
-                  fill={node.color}
-                  opacity={0.1}
-                  aria-hidden="true"
-                />
-
-                <text
-                  textAnchor="middle"
-                  y={percentY}
-                  className="wallet-map__node-percent"
-                  style={{ fontSize: `${percentSize}px` }}
+              <li key={node.holder.owner}>
+                <button
+                  type="button"
+                  onFocus={() => setHovered(node.holder.owner)}
+                  onBlur={() => setHovered(null)}
+                  onClick={() => selectOwner(node.holder.owner)}
                 >
-                  {formatHolderPercent(node.holder.percent)}
-                </text>
-
-                <text
-                  textAnchor="middle"
-                  y={nameY}
-                  className="wallet-map__node-name"
-                  style={{ fill: node.color }}
-                >
-                  {label}
-                </text>
-
-                <text
-                  textAnchor="middle"
-                  y={metaY}
-                  className="wallet-map__node-meta"
-                >
-                  {tier.emoji} {tier.label}
-                  {isSupernode ? ' · ⚡' : ''}
-                </text>
-              </g>
+                  {tier.emoji} {node.holder.label}{' '}
+                  {shortenAddress(node.holder.owner, 4, 4)},{' '}
+                  {formatHolderPercent(node.holder.percent)} of supply
+                </button>
+              </li>
             )
           })}
-        </g>
-
-        <rect
-          width={WIDTH}
-          height={HEIGHT}
-          fill="url(#wallet-map-vignette)"
-          pointerEvents="none"
-        />
-      </svg>
+        </ul>
+      </div>
 
       <div className="wallet-map__overlay">
         <div className="wallet-map__filters" role="group" aria-label="Transfer edge filter">
@@ -1876,7 +2073,7 @@ export function WalletBubbleMap({
     </div>
   )
 
-  const stage = <div className="wallet-map__stage">{canvas}</div>
+  const stage = <div className="wallet-map__stage">{mapView}</div>
 
   if (expanded) {
     return createPortal(
