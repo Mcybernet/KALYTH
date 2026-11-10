@@ -21,18 +21,14 @@ import {
   ExternalLink,
   Lock,
   Maximize2,
-  Menu,
   Minimize2,
   Minus,
   Plus,
   RefreshCw,
   RotateCcw,
-  Search,
   Unlock,
-  X,
 } from 'lucide-react'
-import { explorerAddressUrl, explorerTxUrl, shortenAddress } from '../lib/addresses'
-import { KLYTH_LOGO_URL } from '../lib/assets'
+import { explorerTxUrl, shortenAddress } from '../lib/addresses'
 import {
   formatHolderPercent,
   holderTier,
@@ -68,7 +64,7 @@ const SUPERNODE_TRANSFERS = 100
 /** SIDARA-style palette: one calm hue per protocol role. */
 const CLUSTER_COLORS_BY_ROLE: Record<HolderRole, string> = {
   wallet: '#4ADE80',
-  vault: '#6366F1',
+  vault: '#2DD4BF',
   burn: '#F87171',
   treasury: '#FBBF24',
   demo: '#A78BFA',
@@ -82,7 +78,9 @@ const ROLE_LABELS: Record<HolderRole, string> = {
   demo: 'Demo wallet',
 }
 
-const HUB_COLOR = '#6366F1'
+const HUB_COLOR = '#E0A64B'
+/** Warm neutral for links that do not belong to a cluster or protocol role. */
+const DEFAULT_EDGE_COLOR = '#B99A6B'
 
 type EdgeMode = 'wallet' | 'all' | 'curve'
 
@@ -113,7 +111,6 @@ type PlacedEdge = {
   sourceColor: string
   targetColor: string
   width: number
-  dashed: boolean
 }
 
 type Layout = {
@@ -208,13 +205,6 @@ function clusterLabel(id: string): string {
   return `Cluster ${id.replace(/^C/, '')}`
 }
 
-function isNarrowViewport(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    window.matchMedia('(max-width: 900px)').matches
-  )
-}
-
 function svgPoint(
   clientX: number,
   clientY: number,
@@ -263,20 +253,28 @@ function buildPlacedEdges(
     const endY = target.y - unitY * (target.radius + 13)
 
     const bendDirection = hashString(edge.key) % 2 === 0 ? 1 : -1
-    const bend = edge.kind === 'curve' ? 0.1 : 0.18
-    let midX = (startX + endX) / 2 - unitY * distance * bend * bendDirection
-    let midY = (startY + endY) / 2 + unitX * distance * bend * bendDirection
+    // Curve-flow links are drawn as plain straight strokes so the vault leg
+    // reads as a normal connection instead of a dashed arc.
+    const straight = edge.kind === 'curve'
+    const bend = 0.18
+    let midX = (startX + endX) / 2
+    let midY = (startY + endY) / 2
 
-    // Never let a link cut straight through the KLYTH hub.
-    const hubDeltaX = midX - hubX
-    const hubDeltaY = midY - hubY
-    const hubDistance = Math.hypot(hubDeltaX, hubDeltaY)
-    const safeHubDistance = HUB_RADIUS + 34
-    if (hubDistance < safeHubDistance) {
-      const angle =
-        hubDistance < 0.001 ? Math.PI / 2 : Math.atan2(hubDeltaY, hubDeltaX)
-      midX = hubX + Math.cos(angle) * safeHubDistance
-      midY = hubY + Math.sin(angle) * safeHubDistance
+    if (!straight) {
+      midX -= unitY * distance * bend * bendDirection
+      midY += unitX * distance * bend * bendDirection
+
+      // Never let a link cut straight through the KLYTH hub.
+      const hubDeltaX = midX - hubX
+      const hubDeltaY = midY - hubY
+      const hubDistance = Math.hypot(hubDeltaX, hubDeltaY)
+      const safeHubDistance = HUB_RADIUS + 34
+      if (hubDistance < safeHubDistance) {
+        const angle =
+          hubDistance < 0.001 ? Math.PI / 2 : Math.atan2(hubDeltaY, hubDeltaX)
+        midX = hubX + Math.cos(angle) * safeHubDistance
+        midY = hubY + Math.sin(angle) * safeHubDistance
+      }
     }
 
     const sourceCluster = graph?.memberByOwner[source.holder.owner]
@@ -286,7 +284,7 @@ function buildPlacedEdges(
 
     let sourceColor = source.color
     let targetColor = target.color
-    let color = '#A5B4FC'
+    let color = DEFAULT_EDGE_COLOR
     if (edge.kind === 'wallet') {
       if (sharedCluster) {
         sourceColor = sharedCluster.color
@@ -310,18 +308,19 @@ function buildPlacedEdges(
 
     placed.push({
       edge,
-      path: `M ${startX} ${startY} Q ${midX} ${midY} ${endX} ${endY}`,
+      path: straight
+        ? `M ${startX} ${startY} L ${endX} ${endY}`
+        : `M ${startX} ${startY} Q ${midX} ${midY} ${endX} ${endY}`,
       startX,
       startY,
       endX,
       endY,
-      midX: 0.25 * startX + 0.5 * midX + 0.25 * endX,
-      midY: 0.25 * startY + 0.5 * midY + 0.25 * endY,
+      midX: straight ? midX : 0.25 * startX + 0.5 * midX + 0.25 * endX,
+      midY: straight ? midY : 0.25 * startY + 0.5 * midY + 0.25 * endY,
       color,
       sourceColor,
       targetColor,
       width,
-      dashed: edge.kind === 'curve',
     })
   }
 
@@ -491,10 +490,6 @@ export function WalletBubbleMap({
   onRefreshTransfers,
 }: WalletBubbleMapProps) {
   const [edgeMode, setEdgeMode] = useState<EdgeMode>('wallet')
-  const [addressQuery, setAddressQuery] = useState('')
-  const [sideOpen, setSideOpen] = useState(
-    () => typeof window === 'undefined' || !isNarrowViewport(),
-  )
   const [expanded, setExpanded] = useState(false)
   const [hovered, setHovered] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
@@ -505,6 +500,11 @@ export function WalletBubbleMap({
   const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null)
   const [view, setView] = useState<ViewState>({ x: 0, y: 0, scale: 1 })
   const [motionPhase, setMotionPhase] = useState(0)
+  const [reduceMotion] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  )
   const [draggingOwner, setDraggingOwner] = useState<string | null>(null)
   const [dragOffsets, setDragOffsets] = useState<
     Record<string, { x: number; y: number }>
@@ -553,15 +553,17 @@ export function WalletBubbleMap({
   )
 
   // Gentle idle drift keeps the map alive like the SIDARA monitor while the
-  // base layout stays deterministic. Edges are rebuilt from the animated
-  // positions so links never detach from their bubbles.
+  // base layout stays deterministic. The tick is capped at ~24fps and paused
+  // when the tab is hidden, which keeps the map smooth without burning CPU.
   useEffect(() => {
     let frame = 0
     let last = 0
     const step = (now: number) => {
-      if (now - last >= 33) {
+      if (now - last >= 42) {
         last = now
-        motionPhaseRef.current = now
+        const interaction =
+          reactionRef.current !== null || settleRef.current !== null
+        if (!reduceMotion) motionPhaseRef.current = now
         const reaction = reactionRef.current
         if (reaction) {
           // Ramp the neighbour push up while dragging, then ease it back so
@@ -583,13 +585,15 @@ export function WalletBubbleMap({
           }))
           if (settle.progress >= 1) settleRef.current = null
         }
-        setMotionPhase(now)
+        if ((!reduceMotion || interaction) && !document.hidden) {
+          setMotionPhase(now)
+        }
       }
       frame = requestAnimationFrame(step)
     }
     frame = requestAnimationFrame(step)
     return () => cancelAnimationFrame(frame)
-  }, [])
+  }, [reduceMotion])
 
   const displayNodes = useMemo(() => {
     const positioned = layout.nodes.map((node) => {
@@ -600,7 +604,9 @@ export function WalletBubbleMap({
         // exactly while it is being dragged.
         return { ...node, x: node.x + offset.x, y: node.y + offset.y }
       }
-      const drift = driftOffset(owner, node.radius, motionPhase)
+      const drift = reduceMotion
+        ? { x: 0, y: 0 }
+        : driftOffset(owner, node.radius, motionPhase)
       return {
         ...node,
         x: node.x + offset.x + drift.x,
@@ -636,7 +642,7 @@ export function WalletBubbleMap({
         y: node.y + (dy / distance) * push,
       }
     })
-  }, [layout, dragOffsets, draggingOwner, motionPhase])
+  }, [layout, dragOffsets, draggingOwner, motionPhase, reduceMotion])
 
   useEffect(() => {
     displayNodesRef.current = displayNodes
@@ -774,16 +780,12 @@ export function WalletBubbleMap({
           setSelectedEdge(null)
           return
         }
-        if (sideOpen && isNarrowViewport()) {
-          setSideOpen(false)
-          return
-        }
         if (expanded) setExpanded(false)
       }
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [expanded, hovered, lockedOwner, selected, selectedEdge, sideOpen])
+  }, [expanded, hovered, lockedOwner, selected, selectedEdge])
 
   const edgeStats = useMemo(() => {
     const stats = new Map<string, { count: number; volumeRaw: bigint; peers: Set<string> }>()
@@ -862,26 +864,6 @@ export function WalletBubbleMap({
     return result
   }, [graph, holders])
 
-  const filteredHolders = useMemo(() => {
-    const query = addressQuery.trim().toLowerCase()
-    if (!query) return holders
-    return holders.filter((holder) => {
-      const tier = holderTier(holder.tier)
-      return (
-        holder.owner.toLowerCase().includes(query) ||
-        holder.label.toLowerCase().includes(query) ||
-        tier.label.toLowerCase().includes(query) ||
-        holder.role.toLowerCase().includes(query)
-      )
-    })
-  }, [addressQuery, holders])
-
-  const searchActive = addressQuery.trim().length > 0
-  const matchedOwners = useMemo(
-    () => new Set(filteredHolders.map((holder) => holder.owner)),
-    [filteredHolders],
-  )
-
   const allBubbleColors = useMemo(() => {
     const colors = new Set<string>([HUB_COLOR])
     for (const node of layout.nodes) colors.add(node.color)
@@ -905,7 +887,10 @@ export function WalletBubbleMap({
   const markerColors = useMemo(
     () =>
       Array.from(
-        new Set([...visibleEdges.map((placed) => placed.targetColor), '#A5B4FC']),
+        new Set([
+          ...visibleEdges.map((placed) => placed.targetColor),
+          DEFAULT_EDGE_COLOR,
+        ]),
       ),
     [visibleEdges],
   )
@@ -920,10 +905,29 @@ export function WalletBubbleMap({
           y: (hash >>> 10) % HEIGHT,
           r: 0.6 + ((hash >>> 20) % 26) / 10,
           alpha: 0.05 + ((hash >>> 24) % 10) / 100,
-          delay: `${((hash >>> 27) % 60) / 10}s`,
         }
       }),
     [],
+  )
+
+  // The 34 background dots never change, so memoise the whole group instead
+  // of reconciling it on every drift tick.
+  const ambientLayer = useMemo(
+    () => (
+      <g className="wallet-map__ambient" aria-hidden="true">
+        {ambientDots.map((dot) => (
+          <circle
+            key={dot.key}
+            cx={dot.x}
+            cy={dot.y}
+            r={dot.r}
+            fill={`rgba(232, 193, 130, ${dot.alpha})`}
+            className="wallet-map__ambient-dot"
+          />
+        ))}
+      </g>
+    ),
+    [ambientDots],
   )
 
   function zoomBy(factor: number) {
@@ -982,7 +986,6 @@ export function WalletBubbleMap({
     setLockedOwner(owner)
     setSelectedEdge(null)
     focusOwner(owner)
-    if (isNarrowViewport()) setSideOpen(false)
   }
 
   function toggleLock() {
@@ -1014,11 +1017,13 @@ export function WalletBubbleMap({
       for (const other of layout.nodes) {
         if (other.holder.owner === owner) continue
         const otherOffset = dragOffsets[other.holder.owner] ?? { x: 0, y: 0 }
-        const drift = driftOffset(
-          other.holder.owner,
-          other.radius,
-          motionPhaseRef.current,
-        )
+        const drift = reduceMotion
+          ? { x: 0, y: 0 }
+          : driftOffset(
+              other.holder.owner,
+              other.radius,
+              motionPhaseRef.current,
+            )
         const otherX = other.x + otherOffset.x + drift.x
         const otherY = other.y + otherOffset.y + drift.y
         const centerX = node.x + resolved.x
@@ -1066,7 +1071,7 @@ export function WalletBubbleMap({
     // Bake the current drift into the drag origin so freezing the idle motion
     // does not make the bubble jump on pointerdown.
     const drift =
-      nodeOwner && node
+      nodeOwner && node && !reduceMotion
         ? driftOffset(nodeOwner, node.radius, motionPhaseRef.current)
         : { x: 0, y: 0 }
     const originX = (existingOffset?.x ?? 0) + drift.x
@@ -1205,8 +1210,9 @@ export function WalletBubbleMap({
   const activeIsSupernode = activeTransfers >= SUPERNODE_TRANSFERS
 
   const edgeColor = activeEdge
-    ? visibleEdges.find((item) => item.edge.key === activeEdge.key)?.color ?? '#A5B4FC'
-    : '#A5B4FC'
+    ? visibleEdges.find((item) => item.edge.key === activeEdge.key)?.color ??
+      DEFAULT_EDGE_COLOR
+    : DEFAULT_EDGE_COLOR
 
   const tooltipAnchor = pointer ?? {
     x: typeof window === 'undefined' ? 320 : window.innerWidth * 0.56,
@@ -1239,18 +1245,6 @@ export function WalletBubbleMap({
           }`
         : `${holders.length} holders · ${totalTrades} curve trades`
 
-  const footText = graph
-    ? `${graph.parsedTransactions}/${graph.scannedSignatures} txs parsed${
-        graph.failedTransactions > 0
-          ? ` · ${graph.failedTransactions} rate-limited`
-          : ''
-      }${graph.truncated ? ' · window capped' : ''}${
-        walletEdgeCount === 0 && graph.edges.length > 0 ? ' · curve-only window' : ''
-      }`
-    : scanning
-      ? 'Scanning transfer paths…'
-      : 'Transfer scan pending'
-
   const legendEntries = [
     ...clusterLegend.map(({ cluster, percent }) => ({
       key: `legend-${cluster.id}`,
@@ -1264,200 +1258,8 @@ export function WalletBubbleMap({
     })),
   ]
 
-  const side = (
-    <aside className={`wallet-map__side${sideOpen ? ' is-open' : ''}`} aria-label="Holder list">
-      <div className="wallet-map__side-head">
-        <span className="wallet-map__side-logo" aria-hidden="true">
-          <img src={KLYTH_LOGO_URL} alt="" />
-        </span>
-        <div className="wallet-map__side-brand">
-          <b>KLYTH</b>
-          <small>Holder map</small>
-        </div>
-        <div className="wallet-map__side-actions">
-          {expanded ? (
-            <button
-              type="button"
-              className="wallet-map__icon-btn"
-              onClick={() => setExpanded(false)}
-              aria-label="Exit full screen map"
-              title="Exit full screen"
-            >
-              <Minimize2 size={14} aria-hidden="true" />
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className="wallet-map__side-close wallet-map__icon-btn"
-            onClick={() => setSideOpen(false)}
-            aria-label="Hide holder list"
-            title="Hide holder list"
-          >
-            <X size={14} aria-hidden="true" />
-          </button>
-        </div>
-      </div>
-
-      <div className="wallet-map__side-sec">
-        <div className="wallet-map__list-head">
-          <span className="wallet-map__side-label">Holders</span>
-          <span className="wallet-map__side-count">
-            {searchActive
-              ? `${filteredHolders.length} of ${holders.length}`
-              : `${holders.length} holder${holders.length === 1 ? '' : 's'}`}
-          </span>
-        </div>
-        <label className="wallet-map__search">
-          <Search size={13} aria-hidden="true" />
-          <input
-            value={addressQuery}
-            onChange={(event) => setAddressQuery(event.target.value)}
-            placeholder="Search holder, address, tier…"
-            aria-label="Search holder address"
-            spellCheck={false}
-            autoComplete="off"
-          />
-          {addressQuery ? (
-            <button
-              type="button"
-              className="wallet-map__search-clear"
-              onClick={() => setAddressQuery('')}
-              aria-label="Clear address search"
-            >
-              <X size={11} aria-hidden="true" />
-            </button>
-          ) : null}
-        </label>
-      </div>
-
-      <div className="wallet-map__list">
-        {filteredHolders.length === 0 ? (
-          <p className="wallet-map__empty">No holder matches “{addressQuery}”.</p>
-        ) : (
-          <ul>
-            {filteredHolders.map((holder) => {
-              const tier = holderTier(holder.tier)
-              const clusterId = graph?.memberByOwner[holder.owner]
-              const color = colorByOwner.get(holder.owner) ?? roleColor(holder.role)
-              const isActive = lockedOwner === holder.owner || selected === holder.owner
-              const transfers =
-                (edgeStats.get(holder.owner)?.count ?? 0) +
-                (tradeCounts.get(holder.owner) ?? 0)
-              const isSupernode = transfers >= SUPERNODE_TRANSFERS
-
-              return (
-                <li
-                  key={holder.owner}
-                  className={`wallet-map__item${isActive ? ' is-active' : ''}`}
-                >
-                  <button
-                    type="button"
-                    className="wallet-map__item-btn"
-                    onPointerEnter={() => setHovered(holder.owner)}
-                    onPointerLeave={() => setHovered(null)}
-                    onClick={() => selectOwner(holder.owner)}
-                    title={`${holder.owner} · ${holder.amount} KLYTH · ${tier.rangeLabel}`}
-                  >
-                    <span className="wallet-map__field" data-label="Holder">
-                      <span className="wallet-map__value">{displayLabel(holder)}</span>
-                    </span>
-                    <span className="wallet-map__field" data-label="Share">
-                      <span className="wallet-map__value wallet-map__value--mono">
-                        {formatHolderPercent(holder.percent)}
-                      </span>
-                    </span>
-                    <span className="wallet-map__field" data-label="Tier">
-                      <span
-                        className="wallet-map__value wallet-map__value--tier"
-                        style={{ color }}
-                      >
-                        {tier.emoji} {tier.label}
-                      </span>
-                    </span>
-                    <span className="wallet-map__field" data-label="Balance">
-                      <span className="wallet-map__value wallet-map__value--mono">
-                        {holder.amount}
-                      </span>
-                    </span>
-                  </button>
-
-                  {isActive ? (
-                    <div className="wallet-map__item-detail">
-                      <a
-                        className="wallet-map__item-address"
-                        href={explorerAddressUrl(holder.owner)}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        {shortenAddress(holder.owner, 10, 8)}
-                        <ExternalLink size={10} aria-hidden="true" />
-                      </a>
-                      <div className="wallet-map__item-stats">
-                        <span>
-                          <strong>{edgeStats.get(holder.owner)?.count ?? 0}</strong>
-                          {(edgeStats.get(holder.owner)?.count ?? 0) === 1 ? ' link' : ' links'}
-                        </span>
-                        <span>
-                          <strong>{tradeCounts.get(holder.owner) ?? 0}</strong> curve
-                        </span>
-                        <span className="wallet-map__tag">{holderKind(holder.role)}</span>
-                        {clusterId ? (
-                          <span className="wallet-map__tag">{clusterLabel(clusterId)}</span>
-                        ) : null}
-                        {isSupernode ? (
-                          <span className="wallet-map__tag wallet-map__tag--hot">Supernode</span>
-                        ) : null}
-                      </div>
-                    </div>
-                  ) : null}
-                </li>
-              )
-            })}
-          </ul>
-        )}
-      </div>
-
-      <div className="wallet-map__side-foot">
-        <div className="wallet-map__foot-status">
-          <span
-            className={`wallet-map__foot-dot${scanning ? ' is-pulsing' : ''}${
-              scanError || scanRateLimited ? ' is-error' : ''
-            }`}
-            aria-hidden="true"
-          />
-          <span className="wallet-map__foot-text">{footText}</span>
-        </div>
-        <div className="wallet-map__foot-hint">
-          <kbd>L</kbd> lock bubble · <kbd>Esc</kbd> clear
-        </div>
-      </div>
-    </aside>
-  )
-
   const canvas = (
     <div className="wallet-map__canvas">
-      <button
-        type="button"
-        className="wallet-map__side-toggle"
-        onClick={() => setSideOpen(true)}
-        aria-label="Show holder list"
-        title="Show holder list"
-      >
-        <Menu size={15} aria-hidden="true" />
-        <span>Holders</span>
-      </button>
-
-      {sideOpen ? (
-        <button
-          type="button"
-          className="wallet-map__side-scrim"
-          onClick={() => setSideOpen(false)}
-          aria-label="Close holder list"
-          tabIndex={-1}
-        />
-      ) : null}
-
       <svg
         ref={svgRef}
         className={`wallet-map__svg${dragging ? ' wallet-map__svg--dragging' : ''}`}
@@ -1472,13 +1274,13 @@ export function WalletBubbleMap({
       >
         <defs>
           <radialGradient id="wallet-map-ambient" cx="50%" cy="46%" r="68%">
-            <stop offset="0%" stopColor="#141f3d" stopOpacity="0.55" />
-            <stop offset="52%" stopColor="#0a1022" stopOpacity="0.35" />
-            <stop offset="100%" stopColor="#060A13" stopOpacity="0" />
+            <stop offset="0%" stopColor="#2b2114" stopOpacity="0.6" />
+            <stop offset="52%" stopColor="#15110c" stopOpacity="0.4" />
+            <stop offset="100%" stopColor="#0b0a09" stopOpacity="0" />
           </radialGradient>
           <radialGradient id="wallet-map-vignette" cx="50%" cy="50%" r="74%">
-            <stop offset="58%" stopColor="#060A13" stopOpacity="0" />
-            <stop offset="100%" stopColor="#060A13" stopOpacity="0.7" />
+            <stop offset="58%" stopColor="#0b0a09" stopOpacity="0" />
+            <stop offset="100%" stopColor="#0b0a09" stopOpacity="0.72" />
           </radialGradient>
           <pattern
             id="wallet-map-grid"
@@ -1489,7 +1291,7 @@ export function WalletBubbleMap({
             <path
               d="M 40 0 L 0 0 0 40"
               fill="none"
-              stroke="rgba(59, 130, 246, 0.06)"
+              stroke="rgba(224, 166, 75, 0.07)"
               strokeWidth="1"
             />
           </pattern>
@@ -1540,21 +1342,9 @@ export function WalletBubbleMap({
           ))}
         </defs>
 
-        <rect width={WIDTH} height={HEIGHT} fill="#060A13" />
+        <rect width={WIDTH} height={HEIGHT} fill="#0b0a09" />
 
-        <g className="wallet-map__ambient" aria-hidden="true">
-          {ambientDots.map((dot) => (
-            <circle
-              key={dot.key}
-              cx={dot.x}
-              cy={dot.y}
-              r={dot.r}
-              fill={`rgba(129, 140, 248, ${dot.alpha})`}
-              className="wallet-map__ambient-dot"
-              style={{ animationDelay: dot.delay }}
-            />
-          ))}
-        </g>
+        {ambientLayer}
 
         <g transform={`translate(${view.x} ${view.y}) scale(${view.scale})`}>
           <rect
@@ -1576,11 +1366,7 @@ export function WalletBubbleMap({
             const incident =
               selectionOwner !== null ? placed.edge.owners.includes(selectionOwner) : true
             const edgeActive = hoveredEdge === placed.edge.key || selectedEdge === placed.edge.key
-            const searchRelevant =
-              !searchActive ||
-              placed.edge.owners.some((owner) => matchedOwners.has(owner))
             const dimmed =
-              !searchRelevant ||
               (selectionOwner !== null && !incident) ||
               (hoveredEdge !== null && !edgeActive)
             const opacity = dimmed
@@ -1601,7 +1387,6 @@ export function WalletBubbleMap({
                     strokeWidth={placed.width + 7}
                     strokeOpacity={0.2}
                     strokeLinecap="round"
-                    strokeDasharray={placed.dashed ? '4 7' : undefined}
                   />
                 ) : null}
                 <path
@@ -1610,7 +1395,6 @@ export function WalletBubbleMap({
                   fill="none"
                   stroke={`url(#${edgeGradientId(placed.edge.key)})`}
                   strokeWidth={placed.width}
-                  strokeDasharray={placed.dashed ? '4 7' : undefined}
                   strokeOpacity={opacity}
                   strokeLinecap="round"
                   markerEnd={`url(#wallet-map-arrow-${hexKey(placed.targetColor)})`}
@@ -1697,10 +1481,7 @@ export function WalletBubbleMap({
 
           {displayNodes.map((node) => {
             const isActive = selectionOwner === node.holder.owner
-            const matchesSearch =
-              !searchActive || matchedOwners.has(node.holder.owner)
-            const isDimmed =
-              !matchesSearch || (selectionOwner !== null && !isActive)
+            const isDimmed = selectionOwner !== null && !isActive
             const tier = holderTier(node.holder.tier)
             const percentSize = clamp(node.radius * 0.3, 10, 17)
             const label = displayLabel(node.holder)
@@ -2095,12 +1876,7 @@ export function WalletBubbleMap({
     </div>
   )
 
-  const stage = (
-    <div className="wallet-map__stage">
-      {side}
-      {canvas}
-    </div>
-  )
+  const stage = <div className="wallet-map__stage">{canvas}</div>
 
   if (expanded) {
     return createPortal(
