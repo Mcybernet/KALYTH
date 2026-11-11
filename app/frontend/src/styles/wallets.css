@@ -14,10 +14,12 @@
   grid-template-columns: minmax(0, 1fr);
   height: clamp(520px, 72vh, 720px);
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 16px;
-  background: #0b0a09;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.38);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 0;
+  background: #050403;
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 @keyframes wallet-map-pulse {
@@ -39,12 +41,13 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background: #0b0a09;
+  background: #050403;
   background-image: radial-gradient(
     120% 100% at 50% 45%,
     #171207 0%,
-    #0e0c08 52%,
-    #0b0a09 100%
+    #0d0a06 38%,
+    #050403 72%,
+    #000000 100%
   );
 }
 
@@ -54,9 +57,9 @@
   z-index: 1;
   background: radial-gradient(
     circle at 50% 50%,
-    rgba(11, 10, 9, 0) 52%,
-    rgba(11, 10, 9, 0.42) 82%,
-    rgba(11, 10, 9, 0.72) 100%
+    rgba(0, 0, 0, 0) 46%,
+    rgba(0, 0, 0, 0.5) 78%,
+    rgba(0, 0, 0, 0.85) 100%
   );
   pointer-events: none;
   content: '';
@@ -117,14 +120,14 @@
   padding: 4px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 9px;
+  border-radius: 0;
   background: rgba(14, 11, 8, 0.92);
 }
 
 .wallet-map__filter {
   padding: 6px 12px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 0;
   background: transparent;
   color: rgba(255, 255, 255, 0.4);
   font-family: inherit;
@@ -220,7 +223,7 @@
   gap: 2px;
   padding: 4px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 9px;
+  border-radius: 0;
   background: rgba(14, 11, 8, 0.92);
 }
 
@@ -231,7 +234,7 @@
   width: 28px;
   height: 28px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 0;
   background: transparent;
   color: rgba(255, 255, 255, 0.5);
   cursor: pointer;
@@ -263,7 +266,7 @@
   max-width: calc(100% - 150px);
   padding: 6px 14px;
   border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 999px;
+  border-radius: 0;
   background: rgba(14, 11, 8, 0.94);
   color: rgba(255, 255, 255, 0.55);
   font-size: 11px;
@@ -303,7 +306,7 @@
   gap: 4px;
   padding: 1px 6px;
   border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 999px;
+  border-radius: 0;
   color: rgba(255, 255, 255, 0.6);
   font-family: var(--font-mono);
   font-size: 8.5px;
@@ -328,7 +331,7 @@
   width: 244px;
   padding: 11px 13px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
+  border-radius: 0;
   background: rgba(16, 13, 9, 0.96);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
   color: rgba(255, 255, 255, 0.85);
@@ -364,7 +367,7 @@
   margin-left: auto;
   padding: 1px 5px;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 999px;
+  border-radius: 0;
   color: rgba(255, 255, 255, 0.45);
   font-family: var(--font-mono);
   font-size: 8px;
@@ -658,8 +661,8 @@
   margin: 0 auto;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 16px;
-  background: #0b0a09;
+  border-radius: 0;
+  background: #050403;
   box-shadow: 0 34px 100px rgba(0, 0, 0, 0.75);
 }
 

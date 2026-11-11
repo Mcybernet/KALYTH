@@ -157,6 +157,18 @@ type AmbientDot = {
   alpha: number
 }
 
+type BubbleParticle = {
+  /** Starting angle around the bubble centre, in radians. */
+  angle: number
+  /** Orbit radius as a fraction of the bubble radius. */
+  orbit: number
+  /** Angular speed in radians per second; negative spins the other way. */
+  speed: number
+  size: number
+  /** Vertical squash so the orbit feels like a drifting ellipse. */
+  squash: number
+}
+
 type DrawState = {
   layout: Layout
   graph: TransferGraph | null
@@ -167,6 +179,7 @@ type DrawState = {
   selectedEdge: string | null
   reduceMotion: boolean
   ambientDots: AmbientDot[]
+  particles: Map<string, BubbleParticle[]>
   supernodes: Set<string>
 }
 
@@ -202,6 +215,28 @@ function driftOffset(
       Math.sin(t * 0.31 + seed * 1.3) * amplitude * 0.85 +
       Math.sin(t * 0.73 + seed) * amplitude * 0.18,
   }
+}
+
+/**
+ * Small specks that orbit inside each bubble. Seeded from the owner address so
+ * every wallet keeps its own constellation and nothing jitters between frames.
+ */
+function bubbleParticles(owner: string, radius: number): BubbleParticle[] {
+  const count = radius >= 52 ? 7 : radius >= 34 ? 5 : radius >= 22 ? 4 : 3
+  const particles: BubbleParticle[] = []
+  for (let index = 0; index < count; index += 1) {
+    const hash = hashString(`${owner}:${index}`)
+    particles.push({
+      angle: ((hash & 0xffff) / 0xffff) * TAU,
+      orbit: 0.28 + (((hash >>> 7) & 0xff) / 255) * 0.58,
+      speed:
+        (index % 2 === 0 ? 1 : -1) *
+        (0.12 + (((hash >>> 12) & 0xff) / 255) * 0.5),
+      size: 0.6 + (((hash >>> 16) & 0xff) / 255) * 1.6,
+      squash: 0.42 + (((hash >>> 24) & 0xff) / 255) * 0.5,
+    })
+  }
+  return particles
 }
 
 function parseHex(color: string): [number, number, number] {
@@ -777,6 +812,17 @@ export function WalletBubbleMap({
     [],
   )
 
+  const particles = useMemo(() => {
+    const result = new Map<string, BubbleParticle[]>()
+    for (const node of layout.nodes) {
+      result.set(
+        node.holder.owner,
+        bubbleParticles(node.holder.owner, node.radius),
+      )
+    }
+    return result
+  }, [layout])
+
   const edgeStats = useMemo(() => {
     const stats = new Map<string, { count: number; volumeRaw: bigint; peers: Set<string> }>()
     for (const edge of graph?.edges ?? []) {
@@ -848,6 +894,7 @@ export function WalletBubbleMap({
       selectedEdge,
       reduceMotion,
       ambientDots,
+      particles,
       supernodes,
     }
     dirtyRef.current = true
@@ -1338,6 +1385,42 @@ export function WalletBubbleMap({
       context.arc(node.x, node.y, node.radius * 0.25, 0, TAU)
       context.fillStyle = rgba(node.color, 0.1)
       context.fill()
+
+      const nodeParticles = state.particles.get(node.holder.owner)
+      if (nodeParticles && !isDimmed) {
+        // Orbiting specks keep the bubble feeling alive without animating the
+        // ring itself. Positions stay inside the circle so nothing spills out.
+        const seconds = state.reduceMotion ? 0 : now / 1000
+        const speck = isActive ? 1 : 0.72
+        const warmStyle = rgba(node.color, 0.4 * speck)
+        const lightStyle = `rgba(255, 255, 255, ${0.62 * speck})`
+        for (let index = 0; index < nodeParticles.length; index += 1) {
+          const particle = nodeParticles[index]
+          const orbit = Math.max(
+            2,
+            Math.min(
+              particle.orbit * node.radius,
+              node.radius - particle.size - 2.5,
+            ),
+          )
+          const angle = particle.angle + seconds * particle.speed
+          const particleX = node.x + Math.cos(angle) * orbit
+          const particleY =
+            node.y +
+            Math.sin(angle) * orbit * particle.squash +
+            Math.sin(seconds * 0.7 + particle.angle) * 1.1
+          context.fillStyle = index % 4 === 0 ? lightStyle : warmStyle
+          // Integer, square fillRects are much cheaper than arcs and read as
+          // specks at this size, which keeps 60-bubble maps at full frame rate.
+          const size = Math.max(1, Math.round(particle.size))
+          context.fillRect(
+            Math.round(particleX - size / 2),
+            Math.round(particleY - size / 2),
+            size,
+            size,
+          )
+        }
+      }
 
       context.textAlign = 'center'
       context.textBaseline = 'middle'
