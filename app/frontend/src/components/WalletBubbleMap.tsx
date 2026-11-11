@@ -66,8 +66,6 @@ const TAU = Math.PI * 2
 const GRID_STROKE = 'rgba(224, 166, 75, 0.07)'
 const FONT_SANS =
   "'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-const FONT_MONO =
-  "'IBM Plex Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace"
 const ZERO_OFFSET = { x: 0, y: 0 }
 
 /** SIDARA-style palette: one calm hue per protocol role. */
@@ -167,6 +165,10 @@ type BubbleParticle = {
   size: number
   /** Vertical squash so the orbit feels like a drifting ellipse. */
   squash: number
+  /** Per-particle offset that desynchronises every speck's pulse. */
+  phase: number
+  /** Irrational-ish multiplier so breathing never falls into lockstep. */
+  harmonic: number
 }
 
 type DrawState = {
@@ -228,12 +230,14 @@ function bubbleParticles(owner: string, radius: number): BubbleParticle[] {
     const hash = hashString(`${owner}:${index}`)
     particles.push({
       angle: ((hash & 0xffff) / 0xffff) * TAU,
-      orbit: 0.28 + (((hash >>> 7) & 0xff) / 255) * 0.58,
+      orbit: 0.3 + (((hash >>> 7) & 0xff) / 255) * 0.54,
       speed:
         (index % 2 === 0 ? 1 : -1) *
-        (0.12 + (((hash >>> 12) & 0xff) / 255) * 0.5),
-      size: 0.6 + (((hash >>> 16) & 0xff) / 255) * 1.6,
+        (0.18 + (((hash >>> 12) & 0xff) / 255) * 0.62),
+      size: 0.7 + (((hash >>> 16) & 0xff) / 255) * 1.5,
       squash: 0.42 + (((hash >>> 24) & 0xff) / 255) * 0.5,
+      phase: (((hash >>> 3) & 0xff) / 255) * TAU,
+      harmonic: 1.4 + (((hash >>> 20) & 0xff) / 255) * 2.2,
     })
   }
   return particles
@@ -1320,14 +1324,12 @@ export function WalletBubbleMap({
     for (const node of nodes) {
       const isActive = state.selectionOwner === node.holder.owner
       const isDimmed = state.selectionOwner !== null && !isActive
-      const tier = holderTier(node.holder.tier)
       const label = displayLabel(node.holder)
       const percentSize = clamp(node.radius * 0.3, 10, 17)
       const nameCapacity = Math.floor((node.radius * 2 - 14) / 5.6)
       const showNameInside = node.radius >= 36 && label.length <= nameCapacity
       const nameY = showNameInside ? -6 : node.radius + 14
       const percentY = showNameInside ? 10 : 0
-      const metaY = showNameInside ? node.radius + 12 : node.radius + 26
       const strokeWidth = isActive ? 2.5 : node.radius >= 30 ? 1.5 : 1
       const bodyAlpha = isActive ? 1 : 0.6
       const pulse = state.reduceMotion ? 1 : 0.825 + Math.sin(now / 950) * 0.175
@@ -1389,30 +1391,49 @@ export function WalletBubbleMap({
       const nodeParticles = state.particles.get(node.holder.owner)
       if (nodeParticles && !isDimmed) {
         // Orbiting specks keep the bubble feeling alive without animating the
-        // ring itself. Positions stay inside the circle so nothing spills out.
+        // ring itself. Each one breathes, drifts and twinkles on its own phase
+        // so the swarm churns instead of tracing a fixed ring. Positions stay
+        // inside the circle so nothing spills out.
         const seconds = state.reduceMotion ? 0 : now / 1000
         const speck = isActive ? 1 : 0.72
-        const warmStyle = rgba(node.color, 0.4 * speck)
-        const lightStyle = `rgba(255, 255, 255, ${0.62 * speck})`
+        // Quantised alpha palettes: a handful of cached strings per bubble
+        // instead of one allocation per particle per frame.
+        const warmStyle = [
+          rgba(node.color, 0.22 * speck),
+          rgba(node.color, 0.36 * speck),
+          rgba(node.color, 0.54 * speck),
+        ]
+        const lightStyle = [
+          `rgba(255, 255, 255, ${0.34 * speck})`,
+          `rgba(255, 255, 255, ${0.56 * speck})`,
+          `rgba(255, 255, 255, ${0.8 * speck})`,
+        ]
         for (let index = 0; index < nodeParticles.length; index += 1) {
           const particle = nodeParticles[index]
+          const cycle = seconds * particle.speed + particle.phase
+          // Radial breathing keeps the swarm churning off its base ellipse.
+          const breathe = 0.74 + 0.26 * Math.sin(cycle * particle.harmonic)
           const orbit = Math.max(
             2,
             Math.min(
-              particle.orbit * node.radius,
-              node.radius - particle.size - 2.5,
+              particle.orbit * node.radius * breathe,
+              node.radius - particle.size * 1.6 - 2,
             ),
           )
-          const angle = particle.angle + seconds * particle.speed
+          const angle = particle.angle + cycle
+          // Sideways sway adds a second harmonic so motion never looks circular.
+          const sway = Math.sin(cycle * 2.1 + particle.phase) * node.radius * 0.07
           const particleX = node.x + Math.cos(angle) * orbit
           const particleY =
-            node.y +
-            Math.sin(angle) * orbit * particle.squash +
-            Math.sin(seconds * 0.7 + particle.angle) * 1.1
-          context.fillStyle = index % 4 === 0 ? lightStyle : warmStyle
+            node.y + Math.sin(angle) * orbit * particle.squash + sway
+          // Twinkle drives brightness and size together for a clear pulse.
+          const twinkle = 0.5 + 0.5 * Math.sin(cycle * 3.3 + particle.phase * 1.9)
+          const level = twinkle < 0.34 ? 0 : twinkle < 0.67 ? 1 : 2
+          const palette = index % 5 === 0 ? lightStyle : warmStyle
+          context.fillStyle = palette[level]
+          const size = Math.max(1, Math.round(particle.size * (0.65 + twinkle * 0.9)))
           // Integer, square fillRects are much cheaper than arcs and read as
           // specks at this size, which keeps 60-bubble maps at full frame rate.
-          const size = Math.max(1, Math.round(particle.size))
           context.fillRect(
             Math.round(particleX - size / 2),
             Math.round(particleY - size / 2),
@@ -1434,16 +1455,10 @@ export function WalletBubbleMap({
 
       context.fillStyle = node.color
       context.font = `600 10px ${FONT_SANS}`
-      context.fillText(label, node.x, node.y + nameY)
-
-      context.fillStyle = 'rgba(255, 255, 255, 0.32)'
-      context.font = `500 9px ${FONT_MONO}`
       context.fillText(
-        `${tier.emoji} ${tier.label}${
-          state.supernodes.has(node.holder.owner) ? ' · ⚡' : ''
-        }`,
+        state.supernodes.has(node.holder.owner) ? `${label} ⚡` : label,
         node.x,
-        node.y + metaY,
+        node.y + nameY,
       )
 
       context.restore()

@@ -261,7 +261,6 @@ export function WalletTrackerPage() {
                   <th scope="col">#</th>
                   <th scope="col">Holder</th>
                   <th scope="col">Role</th>
-                  <th scope="col">Tier</th>
                   <th scope="col" className="data-table__num">
                     Balance
                   </th>
@@ -282,7 +281,14 @@ export function WalletTrackerPage() {
                       <td className="wallets-table__rank">{index + 1}</td>
                       <td>
                         <div className="wallets-table__holder">
-                          <span className="wallets-table__label">{holder.label}</span>
+                          <span
+                            className="wallets-table__label"
+                            title={tier.rangeLabel}
+                          >
+                            <span aria-hidden="true">{tier.emoji}</span>{' '}
+                            {holder.label}
+                            <span className="sr-only"> ({tier.label} tier)</span>
+                          </span>
                           <a
                             className="wallets-table__address"
                             href={explorerAddressUrl(holder.owner)}
@@ -297,17 +303,6 @@ export function WalletTrackerPage() {
                       <td>
                         <span className={`badge ${roleBadges[holder.role]}`}>
                           {holder.role === 'wallet' ? 'Holder' : holder.label}
-                        </span>
-                      </td>
-                      <td>
-                        <span
-                          className={`holder-tier holder-tier--${holder.tier}`}
-                          title={tier.rangeLabel}
-                        >
-                          <span className="holder-tier__emoji" aria-hidden="true">
-                            {tier.emoji}
-                          </span>
-                          <span className="holder-tier__label">{tier.label}</span>
                         </span>
                       </td>
                       <td className="data-table__num wallets-table__amount">
