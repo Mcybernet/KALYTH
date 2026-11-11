@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { ExternalLink, Info, RefreshCw } from 'lucide-react'
+import { ExternalLink, Info, Lock, RefreshCw } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { WalletBubbleMap } from '../components/WalletBubbleMap'
 import { useHolderTransfers } from '../hooks/useHolderTransfers'
@@ -8,8 +8,8 @@ import { useTokenHolders } from '../hooks/useTokenHolders'
 import { explorerAddressUrl, shortenAddress } from '../lib/addresses'
 import {
   formatHolderPercent,
-  HOLDER_TIERS,
   holderTier,
+  isContractWallet,
   type HolderRole,
 } from '../lib/holders'
 
@@ -48,15 +48,6 @@ export function WalletTrackerPage() {
     )
     .reduce((sum, holder) => sum + holder.percent, 0)
 
-  const tierCounts = useMemo(
-    () =>
-      HOLDER_TIERS.map((tier) => ({
-        tier,
-        count: holders.filter((holder) => holder.tier === tier.key).length,
-      })),
-    [holders],
-  )
-
   const walletLinks =
     transfers.graph?.edges.filter((edge) => edge.kind === 'wallet').length ?? 0
 
@@ -71,7 +62,7 @@ export function WalletTrackerPage() {
       <PageHeader
         kicker="Wallet tracker"
         title="KLYTH holder map"
-        description="Every wallet that holds KLYTH, sized by its share of the live supply and bucketed into holder tiers. Links replay parsed Devnet transfer transactions to expose trader clusters."
+        description="Every wallet that holds KLYTH, sized by its share of the live supply. Protocol contract wallets are listed separately from sea-creature holder tiers. Links replay parsed Devnet transfer transactions to expose trader clusters."
         actions={
           <>
             <span className={`badge ${statusBadge.className}`}>{statusBadge.text}</span>
@@ -234,25 +225,6 @@ export function WalletTrackerPage() {
             </p>
           </div>
         ) : (
-          <>
-            <div className="holder-tiers" aria-label="Holder tier classification">
-              {tierCounts.map(({ tier, count }) => (
-                <span
-                  key={tier.key}
-                  className={`holder-tier holder-tier--${tier.key}${count === 0 ? ' is-empty' : ''}`}
-                  title={tier.rangeLabel}
-                >
-                  <span className="holder-tier__emoji" aria-hidden="true">
-                    {tier.emoji}
-                  </span>
-                  <span className="holder-tier__label">{tier.label}</span>
-                  <strong className="holder-tier__count">{count}</strong>
-                </span>
-              ))}
-              <span className="holder-tiers__note">
-                Tiers by total KLYTH balance, protocol wallets included.
-              </span>
-            </div>
             <div className="table-wrap">
             <table className="data-table wallets-table">
               <caption className="sr-only">KLYTH holders ranked by balance</caption>
@@ -275,6 +247,7 @@ export function WalletTrackerPage() {
                 {holders.map((holder, index) => {
                   const trades = tradeCounts.get(holder.owner) ?? 0
                   const tier = holderTier(holder.tier)
+                  const contract = isContractWallet(holder.role)
 
                   return (
                     <tr key={holder.owner}>
@@ -283,11 +256,29 @@ export function WalletTrackerPage() {
                         <div className="wallets-table__holder">
                           <span
                             className="wallets-table__label"
-                            title={tier.rangeLabel}
+                            title={
+                              contract
+                                ? 'Protocol contract wallet — no holder tier'
+                                : tier.rangeLabel
+                            }
                           >
-                            <span aria-hidden="true">{tier.emoji}</span>{' '}
-                            {holder.label}
-                            <span className="sr-only"> ({tier.label} tier)</span>
+                            {contract ? (
+                              <>
+                                <Lock
+                                  size={11}
+                                  className="wallets-table__kind-icon"
+                                  aria-hidden="true"
+                                />{' '}
+                                {holder.label}
+                                <span className="sr-only"> (contract wallet)</span>
+                              </>
+                            ) : (
+                              <>
+                                <span aria-hidden="true">{tier.emoji}</span>{' '}
+                                {holder.label}
+                                <span className="sr-only"> ({tier.label} tier)</span>
+                              </>
+                            )}
                           </span>
                           <a
                             className="wallets-table__address"
@@ -341,7 +332,6 @@ export function WalletTrackerPage() {
               </tbody>
             </table>
             </div>
-          </>
         )}
       </section>
 
@@ -352,7 +342,9 @@ export function WalletTrackerPage() {
           <p className="card__description">
             Holder balances come from <code>getProgramAccounts</code> on the SPL Token
             program, filtered by the KLYTH mint and grouped by owner. Tier thresholds use
-            the whole-token balance; percentages use balance ÷ current supply. Transfer
+            the whole-token balance of holder wallets; protocol contracts (burn reserve,
+            curve vault, treasury) are tagged as contracts and stay out of the tier
+            buckets. Percentages use balance ÷ current supply. Transfer
             links come from <code>getSignaturesForAddress</code> plus{' '}
             <code>getTransaction</code> on the current holders&apos; token accounts. Each
             edge is derived from SPL token balance deltas inside a successful

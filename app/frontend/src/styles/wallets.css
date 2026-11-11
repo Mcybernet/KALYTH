@@ -450,85 +450,6 @@
   line-height: 1.5;
 }
 
-/* ------------------------------------------------------------ Holder tiers */
-
-.holder-tiers {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  padding: 0 0 14px;
-}
-
-.holder-tier {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--color-text-secondary);
-  font-family: var(--font-mono);
-  font-size: 9px;
-  line-height: 1.2;
-  white-space: nowrap;
-}
-
-.holder-tier__emoji {
-  font-size: 12px;
-  line-height: 1;
-}
-
-.holder-tier__label {
-  letter-spacing: 0.02em;
-}
-
-.holder-tier__count {
-  color: var(--color-text);
-  font-weight: var(--weight-semibold);
-}
-
-.holder-tier.is-empty {
-  opacity: 0.38;
-}
-
-.holder-tier--whale {
-  border-color: rgba(245, 158, 11, 0.45);
-  color: #fbbf24;
-}
-
-.holder-tier--shark {
-  border-color: rgba(56, 189, 248, 0.45);
-  color: #7dd3fc;
-}
-
-.holder-tier--dolphin {
-  border-color: rgba(34, 211, 238, 0.45);
-  color: #67e8f9;
-}
-
-.holder-tier--fish {
-  border-color: rgba(34, 197, 94, 0.45);
-  color: #86efac;
-}
-
-.holder-tier--crab {
-  border-color: rgba(251, 191, 36, 0.38);
-  color: #fcd34d;
-}
-
-.holder-tier--shrimp {
-  border-color: rgba(148, 163, 184, 0.38);
-  color: #cbd5e1;
-}
-
-.holder-tiers__note {
-  margin-left: auto;
-  color: var(--color-text-secondary);
-  font-size: 10px;
-}
-
 /* ------------------------------------------------------------- Holder table */
 
 .wallets-table {
@@ -549,6 +470,11 @@
 .wallets-table__label {
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
+}
+
+.wallets-table__kind-icon {
+  color: var(--color-text-secondary);
+  vertical-align: -1px;
 }
 
 .wallets-table__address {

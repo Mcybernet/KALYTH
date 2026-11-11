@@ -98,6 +98,15 @@ export function holderTier(tier: HolderTierKey): HolderTier {
   return TIER_BY_KEY.get(tier) ?? HOLDER_TIERS[HOLDER_TIERS.length - 1]
 }
 
+/**
+ * Protocol-controlled accounts (burn reserve, bonding-curve vault, treasury)
+ * are contracts, not market participants. They keep their balance share but
+ * never get a sea-creature holder tier.
+ */
+export function isContractWallet(role: HolderRole): boolean {
+  return role === 'burn' || role === 'vault' || role === 'treasury'
+}
+
 export type TokenHolder = {
   /** Wallet that controls the token accounts below. */
   owner: string

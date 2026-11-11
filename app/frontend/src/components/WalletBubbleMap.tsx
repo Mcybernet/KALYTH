@@ -33,6 +33,7 @@ import { explorerTxUrl, shortenAddress } from '../lib/addresses'
 import {
   formatHolderPercent,
   holderTier,
+  isContractWallet,
   type HolderRole,
   type TokenHolder,
 } from '../lib/holders'
@@ -266,7 +267,7 @@ function roleColor(role: HolderRole): string {
 }
 
 function holderKind(role: HolderRole): NodeKind {
-  return role === 'wallet' || role === 'demo' ? 'EOA' : 'Contract'
+  return isContractWallet(role) ? 'Contract' : 'EOA'
 }
 
 function displayLabel(holder: TokenHolder): string {
@@ -1888,7 +1889,11 @@ export function WalletBubbleMap({
   const activeCluster = activeNode
     ? graph?.memberByOwner[activeNode.holder.owner]
     : undefined
-  const activeTier = activeNode ? holderTier(activeNode.holder.tier) : null
+  const activeIsContract = activeNode
+    ? isContractWallet(activeNode.holder.role)
+    : false
+  const activeTier =
+    activeNode && !activeIsContract ? holderTier(activeNode.holder.tier) : null
   const activeTransfers =
     activeNode ? (activeStats?.count ?? 0) + (tradeCounts.get(activeNode.holder.owner) ?? 0) : 0
   const activeIsSupernode = activeTransfers >= SUPERNODE_TRANSFERS
@@ -1966,6 +1971,7 @@ export function WalletBubbleMap({
         </p>
         <ul>
           {layout.nodes.map((node) => {
+            const contract = isContractWallet(node.holder.role)
             const tier = holderTier(node.holder.tier)
             return (
               <li key={node.holder.owner}>
@@ -1975,7 +1981,8 @@ export function WalletBubbleMap({
                   onBlur={() => setHovered(null)}
                   onClick={() => selectOwner(node.holder.owner)}
                 >
-                  {tier.emoji} {node.holder.label}{' '}
+                  {contract ? 'Contract wallet' : `${tier.emoji} ${tier.label}`}{' '}
+                  {node.holder.label}{' '}
                   {shortenAddress(node.holder.owner, 4, 4)},{' '}
                   {formatHolderPercent(node.holder.percent)} of supply
                 </button>
@@ -2021,7 +2028,7 @@ export function WalletBubbleMap({
           </button>
         </div>
 
-        <div className="wallet-map__legend" aria-label="Holder clusters and tiers">
+        <div className="wallet-map__legend" aria-label="Holder clusters and wallet roles">
           {legendEntries.length === 0 ? (
             <span className="wallet-map__legend-empty">
               {scanning
@@ -2145,12 +2152,14 @@ export function WalletBubbleMap({
               {activeNode.holder.amount} KLYTH
             </span>
           </div>
-          <div className="wallet-map__tooltip-row">
-            <span className="wallet-map__tooltip-label">Tier</span>
-            <span className="wallet-map__tooltip-value">
-              {activeTier?.emoji} {activeTier?.label}
-            </span>
-          </div>
+          {activeTier ? (
+            <div className="wallet-map__tooltip-row">
+              <span className="wallet-map__tooltip-label">Tier</span>
+              <span className="wallet-map__tooltip-value">
+                {activeTier.emoji} {activeTier.label}
+              </span>
+            </div>
+          ) : null}
           <div className="wallet-map__tooltip-row">
             <span className="wallet-map__tooltip-label">Type</span>
             <span className="wallet-map__tooltip-value">
