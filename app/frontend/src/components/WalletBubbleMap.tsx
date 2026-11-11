@@ -158,22 +158,14 @@ type AmbientDot = {
   y: number
   r: number
   alpha: number
-}
-
-type BubbleParticle = {
-  /** Starting angle around the bubble centre, in radians. */
-  angle: number
-  /** Orbit radius as a fraction of the bubble radius. */
-  orbit: number
-  /** Angular speed in radians per second; negative spins the other way. */
+  /** Horizontal drift amplitude, in world units. */
+  driftX: number
+  /** Vertical drift amplitude, in world units. */
+  driftY: number
+  /** Angular drift speed, in radians per second. */
   speed: number
-  size: number
-  /** Vertical squash so the orbit feels like a drifting ellipse. */
-  squash: number
-  /** Per-particle offset that desynchronises every speck's pulse. */
+  /** Phase offset so no two specks move in lockstep. */
   phase: number
-  /** Irrational-ish multiplier so breathing never falls into lockstep. */
-  harmonic: number
 }
 
 type DrawState = {
@@ -186,7 +178,6 @@ type DrawState = {
   selectedEdge: string | null
   reduceMotion: boolean
   ambientDots: AmbientDot[]
-  particles: Map<string, BubbleParticle[]>
   supernodes: Set<string>
 }
 
@@ -222,30 +213,6 @@ function driftOffset(
       Math.sin(t * 0.31 + seed * 1.3) * amplitude * 0.85 +
       Math.sin(t * 0.73 + seed) * amplitude * 0.18,
   }
-}
-
-/**
- * Small specks that orbit inside each bubble. Seeded from the owner address so
- * every wallet keeps its own constellation and nothing jitters between frames.
- */
-function bubbleParticles(owner: string, radius: number): BubbleParticle[] {
-  const count = radius >= 52 ? 9 : radius >= 34 ? 7 : radius >= 22 ? 5 : 4
-  const particles: BubbleParticle[] = []
-  for (let index = 0; index < count; index += 1) {
-    const hash = hashString(`${owner}:${index}`)
-    particles.push({
-      angle: ((hash & 0xffff) / 0xffff) * TAU,
-      orbit: 0.34 + (((hash >>> 7) & 0xff) / 255) * 0.5,
-      speed:
-        (index % 2 === 0 ? 1 : -1) *
-        (0.5 + (((hash >>> 12) & 0xff) / 255) * 1.15),
-      size: 1.1 + (((hash >>> 16) & 0xff) / 255) * 2.1,
-      squash: 0.5 + (((hash >>> 24) & 0xff) / 255) * 0.44,
-      phase: (((hash >>> 3) & 0xff) / 255) * TAU,
-      harmonic: 1.4 + (((hash >>> 20) & 0xff) / 255) * 2.2,
-    })
-  }
-  return particles
 }
 
 function parseHex(color: string): [number, number, number] {
@@ -849,28 +816,21 @@ export function WalletBubbleMap({
 
   const ambientDots = useMemo<AmbientDot[]>(
     () =>
-      Array.from({ length: 34 }, (_, index) => {
+      Array.from({ length: 110 }, (_, index) => {
         const hash = hashString(`klyth-ambient-${index}`)
         return {
           x: hash % WIDTH,
           y: (hash >>> 10) % HEIGHT,
           r: 0.6 + ((hash >>> 20) % 26) / 10,
-          alpha: 0.05 + ((hash >>> 24) % 10) / 100,
+          alpha: 0.07 + ((hash >>> 24) % 13) / 100,
+          driftX: 6 + ((hash >>> 5) % 90) / 10,
+          driftY: 5 + ((hash >>> 13) % 80) / 10,
+          speed: 0.2 + ((hash >>> 17) % 34) / 100,
+          phase: ((hash >>> 21) % 628) / 100,
         }
       }),
     [],
   )
-
-  const particles = useMemo(() => {
-    const result = new Map<string, BubbleParticle[]>()
-    for (const node of layout.nodes) {
-      result.set(
-        node.holder.owner,
-        bubbleParticles(node.holder.owner, node.radius),
-      )
-    }
-    return result
-  }, [layout])
 
   const edgeStats = useMemo(() => {
     const stats = new Map<string, { count: number; volumeRaw: bigint; peers: Set<string> }>()
@@ -943,7 +903,6 @@ export function WalletBubbleMap({
       selectedEdge,
       reduceMotion,
       ambientDots,
-      particles,
       supernodes,
     }
     dirtyRef.current = true
@@ -1295,19 +1254,32 @@ export function WalletBubbleMap({
     const view = viewRef.current
     const scale = view.scale || 1
 
-    // Ambient dots stay pinned to the viewBox like the old SVG layer.
+    // Ambient dust floats behind the map. It is pinned to the frame like the
+    // old SVG layer, but each speck drifts and twinkles on its own slow phase
+    // so the background breathes without touching the bubble simulation.
+    const ambientSeconds = now / 1000
+    context.fillStyle = 'rgb(232, 193, 130)'
     for (const dot of state.ambientDots) {
-      context.beginPath()
-      context.arc(
-        fit.offsetX + dot.x * fit.scale,
-        fit.offsetY + dot.y * fit.scale,
-        Math.max(0.4, dot.r * fit.scale),
-        0,
-        TAU,
+      const driftX = state.reduceMotion
+        ? 0
+        : Math.sin(ambientSeconds * dot.speed + dot.phase) * dot.driftX
+      const driftY = state.reduceMotion
+        ? 0
+        : Math.cos(ambientSeconds * dot.speed * 0.78 + dot.phase * 1.7) *
+          dot.driftY
+      const twinkle = state.reduceMotion
+        ? 1
+        : 0.5 + 0.5 * Math.sin(ambientSeconds * dot.speed * 1.9 + dot.phase)
+      const size = Math.max(1, Math.round(dot.r * fit.scale))
+      context.globalAlpha = dot.alpha * twinkle
+      context.fillRect(
+        Math.round(fit.offsetX + (dot.x + driftX) * fit.scale - size / 2),
+        Math.round(fit.offsetY + (dot.y + driftY) * fit.scale - size / 2),
+        size,
+        size,
       )
-      context.fillStyle = `rgba(232, 193, 130, ${dot.alpha})`
-      context.fill()
     }
+    context.globalAlpha = 1
 
     context.save()
     context.translate(fit.offsetX, fit.offsetY)
@@ -1564,64 +1536,6 @@ export function WalletBubbleMap({
       context.arc(node.x, node.y, node.radius * 0.25, 0, TAU)
       context.fillStyle = rgba(node.color, 0.1)
       context.fill()
-
-      const nodeParticles = state.particles.get(node.holder.owner)
-      if (nodeParticles && !isDimmed) {
-        // Orbiting specks keep the bubble feeling alive without animating the
-        // ring itself. Each one breathes, drifts and twinkles on its own phase
-        // so the swarm churns instead of tracing a fixed ring. Positions stay
-        // inside the circle so nothing spills out.
-        const seconds = state.reduceMotion ? 0 : now / 1000
-        const speck = isActive ? 1 : 0.82
-        // Quantised alpha palettes: a handful of cached strings per bubble
-        // instead of one allocation per particle per frame.
-        const warmStyle = [
-          rgba(node.color, 0.34 * speck),
-          rgba(node.color, 0.56 * speck),
-          rgba(node.color, 0.82 * speck),
-        ]
-        const lightStyle = [
-          `rgba(255, 255, 255, ${0.5 * speck})`,
-          `rgba(255, 255, 255, ${0.74 * speck})`,
-          `rgba(255, 255, 255, ${0.98 * speck})`,
-        ]
-        for (let index = 0; index < nodeParticles.length; index += 1) {
-          const particle = nodeParticles[index]
-          const cycle = seconds * particle.speed + particle.phase
-          // Radial breathing keeps the swarm churning off its base ellipse.
-          const breathe = 0.62 + 0.38 * Math.sin(cycle * particle.harmonic)
-          const orbit = Math.max(
-            2,
-            Math.min(
-              particle.orbit * node.radius * breathe,
-              node.radius - particle.size * 1.6 - 2,
-            ),
-          )
-          const angle = particle.angle + cycle
-          // Sideways sway adds a second harmonic so motion never looks circular.
-          const sway = Math.sin(cycle * 2.1 + particle.phase) * node.radius * 0.12
-          const particleX = node.x + Math.cos(angle) * orbit
-          const particleY =
-            node.y + Math.sin(angle) * orbit * particle.squash + sway
-          // Twinkle drives brightness and size together for a clear pulse.
-          const twinkle = 0.5 + 0.5 * Math.sin(cycle * 3.3 + particle.phase * 1.9)
-          const level = twinkle < 0.34 ? 0 : twinkle < 0.67 ? 1 : 2
-          const palette = index % 3 === 0 ? lightStyle : warmStyle
-          context.fillStyle = palette[level]
-          const size = Math.max(
-            1,
-            Math.round(particle.size * (0.7 + twinkle * 0.8)),
-          )
-          // Integer, square fillRects are much cheaper than arcs and read as
-          // specks at this size, which keeps 60-bubble maps at full frame rate.
-          context.fillRect(
-            Math.round(particleX - size / 2),
-            Math.round(particleY - size / 2),
-            size,
-            size,
-          )
-        }
-      }
 
       context.textAlign = 'center'
       context.textBaseline = 'middle'
