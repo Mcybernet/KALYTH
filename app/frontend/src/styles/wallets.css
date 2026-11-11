@@ -473,6 +473,7 @@
 }
 
 .wallets-table__kind-icon {
+  display: inline-block;
   color: var(--color-text-secondary);
   vertical-align: -1px;
 }
