@@ -816,16 +816,16 @@ export function WalletBubbleMap({
 
   const ambientDots = useMemo<AmbientDot[]>(
     () =>
-      Array.from({ length: 110 }, (_, index) => {
+      Array.from({ length: 140 }, (_, index) => {
         const hash = hashString(`klyth-ambient-${index}`)
         return {
           x: hash % WIDTH,
           y: (hash >>> 10) % HEIGHT,
-          r: 0.6 + ((hash >>> 20) % 26) / 10,
-          alpha: 0.07 + ((hash >>> 24) % 13) / 100,
-          driftX: 6 + ((hash >>> 5) % 90) / 10,
-          driftY: 5 + ((hash >>> 13) % 80) / 10,
-          speed: 0.2 + ((hash >>> 17) % 34) / 100,
+          r: 0.8 + ((hash >>> 20) % 30) / 10,
+          alpha: 0.16 + ((hash >>> 24) % 20) / 100,
+          driftX: 12 + ((hash >>> 5) % 180) / 10,
+          driftY: 10 + ((hash >>> 13) % 160) / 10,
+          speed: 0.45 + ((hash >>> 17) % 70) / 100,
           phase: ((hash >>> 21) % 628) / 100,
         }
       }),
@@ -1261,7 +1261,7 @@ export function WalletBubbleMap({
     const ambientSeconds = now / 1000
     const dustScaleX = width / WIDTH
     const dustScaleY = height / HEIGHT
-    const dustScale = Math.min(dustScaleX, dustScaleY)
+    const dustScale = Math.max(0.6, Math.min(dustScaleX, dustScaleY))
     context.fillStyle = 'rgb(232, 193, 130)'
     for (const dot of state.ambientDots) {
       const driftX = state.reduceMotion
@@ -1273,7 +1273,7 @@ export function WalletBubbleMap({
           dot.driftY
       const twinkle = state.reduceMotion
         ? 1
-        : 0.5 + 0.5 * Math.sin(ambientSeconds * dot.speed * 1.9 + dot.phase)
+        : 0.6 + 0.4 * Math.sin(ambientSeconds * dot.speed * 1.9 + dot.phase)
       const size = Math.max(1, Math.round(dot.r * dustScale))
       context.globalAlpha = dot.alpha * twinkle
       context.fillRect(
