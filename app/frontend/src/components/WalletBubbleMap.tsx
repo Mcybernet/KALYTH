@@ -1254,10 +1254,14 @@ export function WalletBubbleMap({
     const view = viewRef.current
     const scale = view.scale || 1
 
-    // Ambient dust floats behind the map. It is pinned to the frame like the
-    // old SVG layer, but each speck drifts and twinkles on its own slow phase
-    // so the background breathes without touching the bubble simulation.
+    // Ambient dust floats behind the map, spread across the whole canvas
+    // rather than the fitted map box, so the frame never looks empty. Each
+    // speck drifts and twinkles on its own slow phase, without touching the
+    // bubble simulation.
     const ambientSeconds = now / 1000
+    const dustScaleX = width / WIDTH
+    const dustScaleY = height / HEIGHT
+    const dustScale = Math.min(dustScaleX, dustScaleY)
     context.fillStyle = 'rgb(232, 193, 130)'
     for (const dot of state.ambientDots) {
       const driftX = state.reduceMotion
@@ -1270,11 +1274,11 @@ export function WalletBubbleMap({
       const twinkle = state.reduceMotion
         ? 1
         : 0.5 + 0.5 * Math.sin(ambientSeconds * dot.speed * 1.9 + dot.phase)
-      const size = Math.max(1, Math.round(dot.r * fit.scale))
+      const size = Math.max(1, Math.round(dot.r * dustScale))
       context.globalAlpha = dot.alpha * twinkle
       context.fillRect(
-        Math.round(fit.offsetX + (dot.x + driftX) * fit.scale - size / 2),
-        Math.round(fit.offsetY + (dot.y + driftY) * fit.scale - size / 2),
+        Math.round((dot.x + driftX) * dustScaleX - size / 2),
+        Math.round((dot.y + driftY) * dustScaleY - size / 2),
         size,
         size,
       )
