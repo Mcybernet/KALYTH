@@ -1415,9 +1415,9 @@ export function WalletBubbleMap({
     const hubY = hubRef.current.y
     const hubDragging = dragRef.current?.hub === true
 
-    // Faint threads from the hub to every surrounding bubble. They stop at the
-    // rims so the lines never cut across a bubble or the hub label, and sag
-    // slightly like slack string instead of reading as rigid spokes.
+    // Faint straight threads from the hub to every surrounding bubble. They
+    // stop at the rims so the lines never cut across a bubble or the hub label,
+    // and read as taut string between the two centres.
     for (const node of nodes) {
       const deltaX = node.x - hubX
       const deltaY = node.y - hubY
@@ -1429,7 +1429,6 @@ export function WalletBubbleMap({
       const startY = hubY + unitY * (HUB_RADIUS + 3)
       const endX = node.x - unitX * (node.radius + 3)
       const endY = node.y - unitY * (node.radius + 3)
-      const sag = Math.min(20, distance * 0.05)
       const incident =
         state.selectionOwner === null ||
         state.selectionOwner === node.holder.owner
@@ -1449,12 +1448,7 @@ export function WalletBubbleMap({
       context.lineCap = 'round'
       context.beginPath()
       context.moveTo(startX, startY)
-      context.quadraticCurveTo(
-        (startX + endX) / 2,
-        (startY + endY) / 2 + sag,
-        endX,
-        endY,
-      )
+      context.lineTo(endX, endY)
       context.stroke()
       context.restore()
     }
