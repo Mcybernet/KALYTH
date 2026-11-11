@@ -112,8 +112,12 @@ type ForceLink = SimulationLinkDatum<ForceNode> & {
  */
 type SimNode = SimulationNodeDatum &
   LayoutNode & {
+    /** Current spring target; hub dragging shifts this away from rest. */
     homeX: number
     homeY: number
+    /** Settled layout position, kept so the hub can pull and release cleanly. */
+    restX: number
+    restY: number
   }
 
 type SimLink = SimulationLinkDatum<SimNode> & {
@@ -225,18 +229,18 @@ function driftOffset(
  * every wallet keeps its own constellation and nothing jitters between frames.
  */
 function bubbleParticles(owner: string, radius: number): BubbleParticle[] {
-  const count = radius >= 52 ? 7 : radius >= 34 ? 5 : radius >= 22 ? 4 : 3
+  const count = radius >= 52 ? 9 : radius >= 34 ? 7 : radius >= 22 ? 5 : 4
   const particles: BubbleParticle[] = []
   for (let index = 0; index < count; index += 1) {
     const hash = hashString(`${owner}:${index}`)
     particles.push({
       angle: ((hash & 0xffff) / 0xffff) * TAU,
-      orbit: 0.3 + (((hash >>> 7) & 0xff) / 255) * 0.54,
+      orbit: 0.34 + (((hash >>> 7) & 0xff) / 255) * 0.5,
       speed:
         (index % 2 === 0 ? 1 : -1) *
-        (0.18 + (((hash >>> 12) & 0xff) / 255) * 0.62),
-      size: 0.7 + (((hash >>> 16) & 0xff) / 255) * 1.5,
-      squash: 0.42 + (((hash >>> 24) & 0xff) / 255) * 0.5,
+        (0.5 + (((hash >>> 12) & 0xff) / 255) * 1.15),
+      size: 1.1 + (((hash >>> 16) & 0xff) / 255) * 2.1,
+      squash: 0.5 + (((hash >>> 24) & 0xff) / 255) * 0.44,
       phase: (((hash >>> 3) & 0xff) / 255) * TAU,
       harmonic: 1.4 + (((hash >>> 20) & 0xff) / 255) * 2.2,
     })
@@ -682,6 +686,16 @@ export function WalletBubbleMap({
   const simulationRef = useRef<Simulation<SimNode, SimLink> | null>(null)
   const simNodesRef = useRef(new Map<string, SimNode>())
   const simRunningRef = useRef(false)
+  /** Live position of the KLYTH hub in world space; it starts centred. */
+  const hubRef = useRef({ x: WIDTH / 2, y: HEIGHT / 2 })
+  /** Ease-back animation for the hub after a drag. */
+  const hubAnimationRef = useRef<{
+    fromX: number
+    fromY: number
+    start: number
+  } | null>(null)
+  /** Drives the post-drag convergence until every bubble is back home. */
+  const hubReturnRef = useRef<{ start: number } | null>(null)
   const dragRef = useRef<{
     pointerId: number
     startX: number
@@ -690,6 +704,11 @@ export function WalletBubbleMap({
     originY: number
     moved: boolean
     nodeOwner: string | null
+    /** True when this gesture drags the central KLYTH hub instead of a bubble. */
+    hub: boolean
+    /** Pointer offset from the hub centre, in world units. */
+    hubGrabX: number
+    hubGrabY: number
     /** True once the bubble physics has been woken for this gesture. */
     pinned: boolean
     /** Pointer offset from the bubble centre, in world units. */
@@ -717,6 +736,8 @@ export function WalletBubbleMap({
       ...node,
       homeX: node.x,
       homeY: node.y,
+      restX: node.x,
+      restY: node.y,
     }))
     const nodeByOwner = new Map(
       simNodes.map((node) => [node.holder.owner, node]),
@@ -763,6 +784,25 @@ export function WalletBubbleMap({
       )
       .force('x', forceX<SimNode>((node) => node.homeX).strength(0.85))
       .force('y', forceY<SimNode>((node) => node.homeY).strength(0.85))
+      // forceX/forceY cache their targets at initialize, so a separate force is
+      // needed for the hub pull: it reads the live hub position every tick and
+      // nudges the whole constellation toward a distance-weighted offset.
+      .force('hub', (alpha: number) => {
+        const hub = hubRef.current
+        const deltaX = hub.x - WIDTH / 2
+        const deltaY = hub.y - HEIGHT / 2
+        if (Math.abs(deltaX) < 0.01 && Math.abs(deltaY) < 0.01) return
+        const reach = Math.hypot(WIDTH, HEIGHT)
+        for (const node of simNodes) {
+          const distance = Math.hypot(
+            node.restX - WIDTH / 2,
+            node.restY - HEIGHT / 2,
+          )
+          const pull = (0.92 - 0.5 * clamp(distance / reach, 0, 1)) * 0.85
+          node.vx = (node.vx ?? 0) + deltaX * pull * alpha
+          node.vy = (node.vy ?? 0) + deltaY * pull * alpha
+        }
+      })
       .alphaDecay(0.05)
       .velocityDecay(0.7)
       .alphaMin(0.001)
@@ -775,6 +815,10 @@ export function WalletBubbleMap({
 
     // Keep an in-flight drag alive when the graph refreshes mid-gesture.
     const drag = dragRef.current
+    if (drag?.hub) {
+      simulation.alpha(0.25).alphaTarget(0.25)
+      simRunningRef.current = true
+    }
     const dragOwner = drag?.pinned ? drag.nodeOwner : null
     const dragNode = dragOwner ? nodeByOwner.get(dragOwner) : null
     if (dragNode) {
@@ -1028,11 +1072,46 @@ export function WalletBubbleMap({
     })
   }
 
+  function wakeHubPhysics(target: number): void {
+    const simulation = simulationRef.current
+    if (!simulation) return
+    // A hub drag can offset bubbles by a couple of hundred world units, so the
+    // return trip needs more energy than a single-bubble drag.
+    simulation.alpha(Math.max(simulation.alpha(), 0.8))
+    simulation.alphaTarget(target)
+    simRunningRef.current = true
+  }
+
+  /** Ease the hub back to the centre and let the bubbles spring home with it. */
+  function returnHubHome(): void {
+    hubReturnRef.current = { start: performance.now() }
+    const hub = hubRef.current
+    if (Math.hypot(hub.x - WIDTH / 2, hub.y - HEIGHT / 2) < 0.5) {
+      hubRef.current = { x: WIDTH / 2, y: HEIGHT / 2 }
+      wakeHubPhysics(0)
+      return
+    }
+    hubAnimationRef.current = {
+      fromX: hub.x,
+      fromY: hub.y,
+      start: performance.now(),
+    }
+    wakeHubPhysics(0)
+  }
+
+  function resetHub(): void {
+    hubAnimationRef.current = null
+    hubReturnRef.current = { start: performance.now() }
+    hubRef.current = { x: WIDTH / 2, y: HEIGHT / 2 }
+    wakeHubPhysics(0)
+  }
+
   function stepSimulation(): void {
     const simulation = simulationRef.current
     if (!simulation) return
     simulation.tick()
 
+    const hub = hubRef.current
     const dragOwner = draggingOwnerRef.current
     for (const node of simulation.nodes()) {
       const margin = node.radius + 10
@@ -1042,14 +1121,14 @@ export function WalletBubbleMap({
       // Keep neighbours out of the hub, but let a dragged bubble pass over it
       // so the pointer never feels blocked.
       if (node.holder.owner === dragOwner) continue
-      const deltaX = node.x - WIDTH / 2
-      const deltaY = node.y - HEIGHT / 2
+      const deltaX = node.x - hub.x
+      const deltaY = node.y - hub.y
       const distance = Math.hypot(deltaX, deltaY)
       const minimum = HUB_RADIUS + node.radius + 10
       if (distance >= minimum) continue
       const angle = distance < 0.001 ? 0 : Math.atan2(deltaY, deltaX)
-      node.x = WIDTH / 2 + Math.cos(angle) * minimum
-      node.y = HEIGHT / 2 + Math.sin(angle) * minimum
+      node.x = hub.x + Math.cos(angle) * minimum
+      node.y = hub.y + Math.sin(angle) * minimum
     }
   }
 
@@ -1063,6 +1142,61 @@ export function WalletBubbleMap({
 
       if (canvas && state && !document.hidden && visibleRef.current) {
         let simulated = false
+        const hubAnimation = hubAnimationRef.current
+        if (hubAnimation) {
+          const t = clamp((now - hubAnimation.start) / 640, 0, 1)
+          // Ease-out cubic: quick release, gentle settle.
+          const k = 1 - Math.pow(1 - t, 3)
+          const hubX = hubAnimation.fromX + (WIDTH / 2 - hubAnimation.fromX) * k
+          const hubY = hubAnimation.fromY + (HEIGHT / 2 - hubAnimation.fromY) * k
+          hubRef.current = { x: hubX, y: hubY }
+          simulated = true
+          simRunningRef.current = true
+          if (t >= 1) {
+            hubRef.current = { x: WIDTH / 2, y: HEIGHT / 2 }
+            hubAnimationRef.current = null
+            simulationRef.current?.alphaTarget(0)
+          }
+        }
+        const hubReturn = hubReturnRef.current
+        if (hubReturn && !hubAnimationRef.current) {
+          const simulation = simulationRef.current
+          if (simulation) {
+            let maxDelta = 0
+            for (const node of simulation.nodes()) {
+              maxDelta = Math.max(
+                maxDelta,
+                Math.hypot(
+                  (node.x ?? 0) - node.homeX,
+                  (node.y ?? 0) - node.homeY,
+                ),
+              )
+            }
+            if (maxDelta < 0.75 || now - hubReturn.start > 3200) {
+              // Snap the last sub-pixel so the resting frame is pixel-stable.
+              for (const node of simulation.nodes()) {
+                node.x = node.homeX
+                node.y = node.homeY
+                node.vx = 0
+                node.vy = 0
+              }
+              hubReturnRef.current = null
+              simulation.alpha(0)
+              simulation.alphaTarget(0)
+              simRunningRef.current = false
+              dirtyRef.current = true
+            } else {
+              // Hold a little energy so forceX finishes the trip instead of the
+              // simulation falling asleep a dozen pixels short of home.
+              simulation.alpha(0.16)
+              simulation.alphaTarget(0)
+              simulated = true
+              simRunningRef.current = true
+            }
+          } else {
+            hubReturnRef.current = null
+          }
+        }
         if (simRunningRef.current) {
           const simulation = simulationRef.current
           if (simulation) {
@@ -1070,6 +1204,7 @@ export function WalletBubbleMap({
             simulated = true
             if (
               draggingOwnerRef.current === null &&
+              dragRef.current?.hub !== true &&
               simulation.alphaTarget() === 0 &&
               simulation.alpha() < 0.02
             ) {
@@ -1083,6 +1218,7 @@ export function WalletBubbleMap({
 
         const interacting =
           dragRef.current !== null ||
+          hubAnimationRef.current !== null ||
           simulated ||
           viewAnimationRef.current !== null
         const animateSelection = !state.reduceMotion && state.selectionOwner !== null
@@ -1275,8 +1411,54 @@ export function WalletBubbleMap({
       context.restore()
     }
 
-    const hubX = WIDTH / 2
-    const hubY = HEIGHT / 2
+    const hubX = hubRef.current.x
+    const hubY = hubRef.current.y
+    const hubDragging = dragRef.current?.hub === true
+
+    // Faint threads from the hub to every surrounding bubble. They stop at the
+    // rims so the lines never cut across a bubble or the hub label, and sag
+    // slightly like slack string instead of reading as rigid spokes.
+    for (const node of nodes) {
+      const deltaX = node.x - hubX
+      const deltaY = node.y - hubY
+      const distance = Math.hypot(deltaX, deltaY)
+      if (distance <= HUB_RADIUS + node.radius + 4) continue
+      const unitX = deltaX / distance
+      const unitY = deltaY / distance
+      const startX = hubX + unitX * (HUB_RADIUS + 3)
+      const startY = hubY + unitY * (HUB_RADIUS + 3)
+      const endX = node.x - unitX * (node.radius + 3)
+      const endY = node.y - unitY * (node.radius + 3)
+      const sag = Math.min(20, distance * 0.05)
+      const incident =
+        state.selectionOwner === null ||
+        state.selectionOwner === node.holder.owner
+      const shimmer = state.reduceMotion
+        ? 0.5
+        : 0.5 + Math.sin(now / 1200 + distance * 0.012) * 0.5
+      const opacity = !incident
+        ? 0.03
+        : hubDragging
+          ? 0.26 + shimmer * 0.1
+          : 0.09 + shimmer * 0.04
+
+      context.save()
+      context.globalAlpha = opacity
+      context.strokeStyle = HUB_COLOR
+      context.lineWidth = hubDragging ? 1.3 : 1
+      context.lineCap = 'round'
+      context.beginPath()
+      context.moveTo(startX, startY)
+      context.quadraticCurveTo(
+        (startX + endX) / 2,
+        (startY + endY) / 2 + sag,
+        endX,
+        endY,
+      )
+      context.stroke()
+      context.restore()
+    }
+
     const orbitPulse = state.reduceMotion
       ? 0.375
       : 0.375 + Math.sin(now / 1400) * 0.075
@@ -1396,24 +1578,24 @@ export function WalletBubbleMap({
         // so the swarm churns instead of tracing a fixed ring. Positions stay
         // inside the circle so nothing spills out.
         const seconds = state.reduceMotion ? 0 : now / 1000
-        const speck = isActive ? 1 : 0.72
+        const speck = isActive ? 1 : 0.82
         // Quantised alpha palettes: a handful of cached strings per bubble
         // instead of one allocation per particle per frame.
         const warmStyle = [
-          rgba(node.color, 0.22 * speck),
-          rgba(node.color, 0.36 * speck),
-          rgba(node.color, 0.54 * speck),
+          rgba(node.color, 0.34 * speck),
+          rgba(node.color, 0.56 * speck),
+          rgba(node.color, 0.82 * speck),
         ]
         const lightStyle = [
-          `rgba(255, 255, 255, ${0.34 * speck})`,
-          `rgba(255, 255, 255, ${0.56 * speck})`,
-          `rgba(255, 255, 255, ${0.8 * speck})`,
+          `rgba(255, 255, 255, ${0.5 * speck})`,
+          `rgba(255, 255, 255, ${0.74 * speck})`,
+          `rgba(255, 255, 255, ${0.98 * speck})`,
         ]
         for (let index = 0; index < nodeParticles.length; index += 1) {
           const particle = nodeParticles[index]
           const cycle = seconds * particle.speed + particle.phase
           // Radial breathing keeps the swarm churning off its base ellipse.
-          const breathe = 0.74 + 0.26 * Math.sin(cycle * particle.harmonic)
+          const breathe = 0.62 + 0.38 * Math.sin(cycle * particle.harmonic)
           const orbit = Math.max(
             2,
             Math.min(
@@ -1423,16 +1605,19 @@ export function WalletBubbleMap({
           )
           const angle = particle.angle + cycle
           // Sideways sway adds a second harmonic so motion never looks circular.
-          const sway = Math.sin(cycle * 2.1 + particle.phase) * node.radius * 0.07
+          const sway = Math.sin(cycle * 2.1 + particle.phase) * node.radius * 0.12
           const particleX = node.x + Math.cos(angle) * orbit
           const particleY =
             node.y + Math.sin(angle) * orbit * particle.squash + sway
           // Twinkle drives brightness and size together for a clear pulse.
           const twinkle = 0.5 + 0.5 * Math.sin(cycle * 3.3 + particle.phase * 1.9)
           const level = twinkle < 0.34 ? 0 : twinkle < 0.67 ? 1 : 2
-          const palette = index % 5 === 0 ? lightStyle : warmStyle
+          const palette = index % 3 === 0 ? lightStyle : warmStyle
           context.fillStyle = palette[level]
-          const size = Math.max(1, Math.round(particle.size * (0.65 + twinkle * 0.9)))
+          const size = Math.max(
+            1,
+            Math.round(particle.size * (0.7 + twinkle * 0.8)),
+          )
           // Integer, square fillRects are much cheaper than arcs and read as
           // specks at this size, which keeps 60-bubble maps at full frame rate.
           context.fillRect(
@@ -1509,14 +1694,14 @@ export function WalletBubbleMap({
   }
 
   function hitTestHub(point: { x: number; y: number }): boolean {
-    return (
-      Math.hypot(point.x - WIDTH / 2, point.y - HEIGHT / 2) <= HUB_RADIUS + 12
-    )
+    const hub = hubRef.current
+    return Math.hypot(point.x - hub.x, point.y - hub.y) <= HUB_RADIUS + 12
   }
 
   function handlePointerDown(event: ReactPointerEvent<HTMLCanvasElement>) {
     if (event.button !== 0) return
     cancelViewAnimation()
+    hubReturnRef.current = null
 
     const point = localPointFromEvent(event)
     const node = hitTestNode(point)
@@ -1527,6 +1712,11 @@ export function WalletBubbleMap({
       setSelected(null)
       setLockedOwner(null)
       setSelectedEdge(null)
+    }
+
+    if (hub) {
+      // Grabbing the hub cancels any ease-back so the pointer owns it.
+      hubAnimationRef.current = null
     }
 
     const { width, height } = sizeRef.current
@@ -1544,6 +1734,9 @@ export function WalletBubbleMap({
       originY: viewRef.current.y,
       moved: false,
       nodeOwner: node?.holder.owner ?? null,
+      hub,
+      hubGrabX: hub ? point.x - hubRef.current.x : 0,
+      hubGrabY: hub ? point.y - hubRef.current.y : 0,
       pinned: false,
       grabX: node ? point.x - node.x : 0,
       grabY: node ? point.y - node.y : 0,
@@ -1624,6 +1817,23 @@ export function WalletBubbleMap({
     }
     if (!drag.moved) return
 
+    if (drag.hub) {
+      hubAnimationRef.current = null
+      const world = toWorld(current, viewRef.current)
+      hubRef.current = {
+        x: clamp(world.x - drag.hubGrabX, 32, WIDTH - 32),
+        y: clamp(world.y - drag.hubGrabY, 32, HEIGHT - 32),
+      }
+      const simulation = simulationRef.current
+      if (simulation) {
+        simulation.alpha(Math.max(simulation.alpha(), 0.2))
+        simulation.alphaTarget(0.25)
+        simRunningRef.current = true
+      }
+      dirtyRef.current = true
+      return
+    }
+
     if (drag.nodeOwner) {
       const simNode = simNodesRef.current.get(drag.nodeOwner)
       if (!simNode) return
@@ -1673,7 +1883,15 @@ export function WalletBubbleMap({
       draggingOwnerRef.current = null
     }
 
-    if (!drag.moved && allowClick) {
+    if (drag.hub) {
+      if (drag.moved) {
+        returnHubHome()
+      } else if (allowClick) {
+        resetMap()
+      }
+    }
+
+    if (!drag.hub && !drag.moved && allowClick) {
       if (drag.nodeOwner) {
         selectOwner(drag.nodeOwner)
       } else {
@@ -1717,7 +1935,9 @@ export function WalletBubbleMap({
       if (event.currentTarget.hasPointerCapture(drag.pointerId)) return
       dragRef.current = null
       setDragging(false)
-      if (drag.pinned && drag.nodeOwner) {
+      if (drag.hub) {
+        returnHubHome()
+      } else if (drag.pinned && drag.nodeOwner) {
         const simNode = simNodesRef.current.get(drag.nodeOwner)
         if (simNode) {
           simNode.fx = null
@@ -1777,6 +1997,7 @@ export function WalletBubbleMap({
     setHovered(null)
     setHoveredEdge(null)
     draggingOwnerRef.current = null
+    resetHub()
 
     // Let any in-flight physics finish instead of freezing mid-bounce.
     const simulation = simulationRef.current
