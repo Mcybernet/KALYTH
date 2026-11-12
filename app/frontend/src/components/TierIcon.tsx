@@ -15,10 +15,17 @@ type TierMark = {
   content: ReactNode
 }
 
+/**
+ * Optical stroke weight in the 24-unit viewBox. The source SVGs are drawn on a
+ * 160-unit grid, so each mark divides this by its normalisation scale. Lower
+ * this number for thinner lines at a given font size.
+ */
+const OPTICAL_STROKE = 1.5
+
 const TIER_MARKS: Record<HolderTierKey, TierMark> = {
   whale: {
     transform: 'translate(12 12) scale(0.1778) translate(-81.055 -79.115)',
-    strokeWidth: 10.97,
+    strokeWidth: OPTICAL_STROKE / 0.1778,
     content: (
       <>
         <path
@@ -38,7 +45,7 @@ const TIER_MARKS: Record<HolderTierKey, TierMark> = {
   },
   shark: {
     transform: 'translate(12 12) scale(0.166008) translate(-76.75 -78)',
-    strokeWidth: 11.75,
+    strokeWidth: OPTICAL_STROKE / 0.166008,
     content: (
       <>
         <path
@@ -54,7 +61,7 @@ const TIER_MARKS: Record<HolderTierKey, TierMark> = {
   },
   dolphin: {
     transform: 'translate(12 12) scale(0.171849) translate(-79.9 -80.125)',
-    strokeWidth: 11.35,
+    strokeWidth: OPTICAL_STROKE / 0.171849,
     content: (
       <>
         <path
@@ -69,7 +76,7 @@ const TIER_MARKS: Record<HolderTierKey, TierMark> = {
   },
   fish: {
     transform: 'translate(12 12) scale(0.183679) translate(-80.165 -79.975)',
-    strokeWidth: 10.62,
+    strokeWidth: OPTICAL_STROKE / 0.183679,
     content: (
       <>
         <path d="M58.0833 52.9515C63.378 45.3525 70.7572 40.9313 80.2211 39.688C80.4569 45.0577 83.0185 50.6149 87.9059 56.3597" />
@@ -92,7 +99,7 @@ const TIER_MARKS: Record<HolderTierKey, TierMark> = {
   },
   crab: {
     transform: 'translate(12 12) scale(0.164242) translate(-80 -82.5)',
-    strokeWidth: 11.87,
+    strokeWidth: OPTICAL_STROKE / 0.164242,
     content: (
       <>
         <path d="M48.5 89L29 84L18 93M48 100.5L28 104L19 115M55 111.5L38 121L32 133" />
@@ -124,7 +131,7 @@ const TIER_MARKS: Record<HolderTierKey, TierMark> = {
   },
   shrimp: {
     transform: 'translate(12 12) scale(0.173396) translate(-76.375 -77)',
-    strokeWidth: 11.25,
+    strokeWidth: OPTICAL_STROKE / 0.173396,
     content: (
       <>
         <path d="M56 57C47 37 34 23 20 23" />
