@@ -188,14 +188,41 @@ function driftOffset(
 ): { x: number; y: number } {
   const t = phaseMs / 1000
   const seed = (hashString(owner) / 4294967295) * Math.PI * 2
-  const amplitude = 3.5 + radius * 0.07
+  const amplitude = 4 + radius * 0.085
   return {
     x:
       Math.cos(t * 0.38 + seed) * amplitude +
-      Math.cos(t * 0.91 + seed * 1.7) * amplitude * 0.2,
+      Math.cos(t * 0.91 + seed * 1.7) * amplitude * 0.34,
     y:
       Math.sin(t * 0.31 + seed * 1.3) * amplitude * 0.85 +
-      Math.sin(t * 0.73 + seed) * amplitude * 0.18,
+      Math.sin(t * 0.73 + seed) * amplitude * 0.3,
+  }
+}
+
+/**
+ * Jelly wobble: every bubble squashes and stretches on its own two-frequency
+ * rhythm, so the map looks like it is breathing instead of sliding in
+ * lockstep. Values stay tiny (a few percent of the radius) so labels remain
+ * readable and hit testing does not drift.
+ */
+function wobbleShape(
+  owner: string,
+  radius: number,
+  phaseMs: number,
+): { x: number; y: number; scaleX: number; scaleY: number } {
+  const t = phaseMs / 1000
+  const hash = hashString(owner)
+  const seed = (hash / 4294967295) * Math.PI * 2
+  const seed2 = ((hash >>> 11) / 0x7fffff) * Math.PI * 2
+  const speedA = 1.7 + ((hash >>> 5) % 90) / 100
+  const speedB = 3.1 + ((hash >>> 13) % 120) / 100
+  const stretch = Math.sin(t * speedA + seed) * 0.05 + Math.sin(t * speedB + seed2) * 0.022
+  const sway = 1.1 + radius * 0.02
+  return {
+    x: Math.sin(t * speedB * 0.9 + seed) * sway,
+    y: Math.cos(t * speedA * 0.8 + seed2) * sway,
+    scaleX: 1 + stretch,
+    scaleY: 1 - stretch * 0.85,
   }
 }
 
@@ -988,10 +1015,13 @@ export function WalletBubbleMap({
       const drift = state.reduceMotion
         ? ZERO_OFFSET
         : driftOffset(node.holder.owner, node.radius, phase)
+      const wobble = state.reduceMotion
+        ? null
+        : wobbleShape(node.holder.owner, node.radius, phase)
       return {
         ...node,
-        x: baseX + drift.x,
-        y: baseY + drift.y,
+        x: baseX + drift.x + (wobble?.x ?? 0),
+        y: baseY + drift.y + (wobble?.y ?? 0),
       }
     })
   }
@@ -1424,6 +1454,15 @@ export function WalletBubbleMap({
 
       context.save()
       context.globalAlpha = baseAlpha
+      if (!state.reduceMotion) {
+        // Squash and stretch the whole bubble about its centre. Everything is
+        // drawn in node coordinates, so the transform is applied and undone
+        // with plain save/restore.
+        const wobble = wobbleShape(node.holder.owner, node.radius, now)
+        context.translate(node.x, node.y)
+        context.scale(wobble.scaleX, wobble.scaleY)
+        context.translate(-node.x, -node.y)
+      }
 
       if (isActive) {
         context.beginPath()
@@ -1474,6 +1513,11 @@ export function WalletBubbleMap({
       context.arc(node.x, node.y, node.radius * 0.25, 0, TAU)
       context.fillStyle = rgba(node.color, 0.1)
       context.fill()
+
+      // Labels sit outside the wobble transform so the numbers stay crisp.
+      context.restore()
+      context.save()
+      context.globalAlpha = baseAlpha
 
       context.textAlign = 'center'
       context.textBaseline = 'middle'
