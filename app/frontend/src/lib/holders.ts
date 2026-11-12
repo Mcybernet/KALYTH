@@ -18,7 +18,6 @@ export type HolderTierKey = 'whale' | 'shark' | 'dolphin' | 'fish' | 'crab' | 's
 
 export type HolderTier = {
   key: HolderTierKey
-  emoji: string
   label: string
   /** Human-readable KLYTH threshold, not raw token units. */
   minAmount: number
@@ -34,7 +33,6 @@ export type HolderTier = {
 export const HOLDER_TIERS: HolderTier[] = [
   {
     key: 'whale',
-    emoji: '🐋',
     label: 'Whale',
     minAmount: 1_000_000,
     maxAmount: null,
@@ -42,7 +40,6 @@ export const HOLDER_TIERS: HolderTier[] = [
   },
   {
     key: 'shark',
-    emoji: '🦈',
     label: 'Shark',
     minAmount: 100_000,
     maxAmount: 1_000_000,
@@ -50,7 +47,6 @@ export const HOLDER_TIERS: HolderTier[] = [
   },
   {
     key: 'dolphin',
-    emoji: '🐬',
     label: 'Dolphin',
     minAmount: 50_000,
     maxAmount: 100_000,
@@ -58,7 +54,6 @@ export const HOLDER_TIERS: HolderTier[] = [
   },
   {
     key: 'fish',
-    emoji: '🐟',
     label: 'Fish',
     minAmount: 10_000,
     maxAmount: 50_000,
@@ -66,7 +61,6 @@ export const HOLDER_TIERS: HolderTier[] = [
   },
   {
     key: 'crab',
-    emoji: '🦀',
     label: 'Crab',
     minAmount: 1_000,
     maxAmount: 10_000,
@@ -74,7 +68,6 @@ export const HOLDER_TIERS: HolderTier[] = [
   },
   {
     key: 'shrimp',
-    emoji: '🦐',
     label: 'Shrimp',
     minAmount: 0,
     maxAmount: 1_000,

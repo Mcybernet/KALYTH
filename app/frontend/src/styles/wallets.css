@@ -411,6 +411,14 @@
   word-break: break-word;
 }
 
+.tier-icon {
+  display: inline-block;
+  width: 1.15em;
+  height: 1.15em;
+  vertical-align: -0.2em;
+  flex: none;
+}
+
 .wallet-map__tooltip-chips {
   display: flex;
   flex-wrap: wrap;

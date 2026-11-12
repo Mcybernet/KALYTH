@@ -227,6 +227,12 @@ These constraints are part of the product, not just the implementation:
 
 ---
 
+## Credits
+
+- Holder-tier icons (whale, shark, dolphin, fish, crab, shrimp) come from [OpenMoji](https://openmoji.org/) Black and are licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). The SVGs embedded in `app/frontend/src/components/TierIcon.tsx` were cropped, rescaled, and recoloured with `currentColor`; they remain under the same licence.
+
+---
+
 ## Documentation
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — program accounts, instructions, math, and client data flow

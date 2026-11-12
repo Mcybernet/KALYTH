@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { ExternalLink, Info, Lock, RefreshCw } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
+import { TierIcon } from '../components/TierIcon'
 import { WalletBubbleMap } from '../components/WalletBubbleMap'
 import { useHolderTransfers } from '../hooks/useHolderTransfers'
 import { useOhlcSnapshot } from '../hooks/useOhlcSnapshot'
@@ -274,7 +275,10 @@ export function WalletTrackerPage() {
                               </>
                             ) : (
                               <>
-                                <span aria-hidden="true">{tier.emoji}</span>{' '}
+                                <TierIcon
+                                  tier={tier.key}
+                                  className="tier-icon"
+                                />{' '}
                                 {holder.label}
                                 <span className="sr-only"> ({tier.label} tier)</span>
                               </>

@@ -30,6 +30,7 @@ import {
   Unlock,
 } from 'lucide-react'
 import { explorerTxUrl, shortenAddress } from '../lib/addresses'
+import { TierIcon } from './TierIcon'
 import {
   formatHolderPercent,
   holderTier,
@@ -2073,7 +2074,14 @@ export function WalletBubbleMap({
                   onBlur={() => setHovered(null)}
                   onClick={() => selectOwner(node.holder.owner)}
                 >
-                  {contract ? 'Contract wallet' : `${tier.emoji} ${tier.label}`}{' '}
+                  {contract ? (
+                    'Contract wallet'
+                  ) : (
+                    <>
+                      <TierIcon tier={tier.key} className="tier-icon" />{' '}
+                      {tier.label}
+                    </>
+                  )}{' '}
                   {node.holder.label}{' '}
                   {shortenAddress(node.holder.owner, 4, 4)},{' '}
                   {formatHolderPercent(node.holder.percent)} of supply
@@ -2248,7 +2256,8 @@ export function WalletBubbleMap({
             <div className="wallet-map__tooltip-row">
               <span className="wallet-map__tooltip-label">Tier</span>
               <span className="wallet-map__tooltip-value">
-                {activeTier.emoji} {activeTier.label}
+                <TierIcon tier={activeTier.key} className="tier-icon" />{' '}
+                {activeTier.label}
               </span>
             </div>
           ) : null}
