@@ -164,6 +164,7 @@ export function TierIcon({ tier, size = 16, className }: TierIconProps) {
   return (
     <svg
       className={className}
+      data-tier={tier}
       width={size}
       height={size}
       viewBox="0 0 24 24"

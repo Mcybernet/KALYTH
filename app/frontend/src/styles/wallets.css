@@ -419,6 +419,31 @@
   flex: none;
 }
 
+/* Tier accents: line + duotone wash inherit the tier colour. */
+.tier-icon[data-tier='whale'] {
+  color: #fbbf24;
+}
+
+.tier-icon[data-tier='shark'] {
+  color: #f97316;
+}
+
+.tier-icon[data-tier='dolphin'] {
+  color: #2dd4bf;
+}
+
+.tier-icon[data-tier='fish'] {
+  color: #38bdf8;
+}
+
+.tier-icon[data-tier='crab'] {
+  color: #a78bfa;
+}
+
+.tier-icon[data-tier='shrimp'] {
+  color: #94a3b8;
+}
+
 .wallet-map__tooltip-chips {
   display: flex;
   flex-wrap: wrap;
