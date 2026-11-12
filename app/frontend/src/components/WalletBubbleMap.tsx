@@ -816,16 +816,16 @@ export function WalletBubbleMap({
 
   const ambientDots = useMemo<AmbientDot[]>(
     () =>
-      Array.from({ length: 140 }, (_, index) => {
+      Array.from({ length: 240 }, (_, index) => {
         const hash = hashString(`klyth-ambient-${index}`)
         return {
           x: hash % WIDTH,
           y: (hash >>> 10) % HEIGHT,
-          r: 0.8 + ((hash >>> 20) % 30) / 10,
-          alpha: 0.16 + ((hash >>> 24) % 20) / 100,
-          driftX: 12 + ((hash >>> 5) % 180) / 10,
-          driftY: 10 + ((hash >>> 13) % 160) / 10,
-          speed: 0.45 + ((hash >>> 17) % 70) / 100,
+          r: 0.9 + ((hash >>> 20) % 26) / 10,
+          alpha: 0.24 + ((hash >>> 24) % 30) / 100,
+          driftX: 18 + ((hash >>> 5) % 340) / 10,
+          driftY: 16 + ((hash >>> 13) % 300) / 10,
+          speed: 0.5 + ((hash >>> 17) % 90) / 100,
           phase: ((hash >>> 21) % 628) / 100,
         }
       }),
@@ -1262,6 +1262,10 @@ export function WalletBubbleMap({
     const dustScaleX = width / WIDTH
     const dustScaleY = height / HEIGHT
     const dustScale = Math.max(0.6, Math.min(dustScaleX, dustScaleY))
+    // The CSS vignette paints up to 85% black over the canvas corners, which
+    // would swallow the dust out there. Compensate so the specks stay readable
+    // right up to the edges of the frame.
+    const cornerDistance = Math.hypot(width / 2, height / 2) || 1
     context.fillStyle = 'rgb(232, 193, 130)'
     for (const dot of state.ambientDots) {
       const driftX = state.reduceMotion
@@ -1273,12 +1277,23 @@ export function WalletBubbleMap({
           dot.driftY
       const twinkle = state.reduceMotion
         ? 1
-        : 0.6 + 0.4 * Math.sin(ambientSeconds * dot.speed * 1.9 + dot.phase)
+        : 0.55 + 0.45 * Math.sin(ambientSeconds * dot.speed * 1.9 + dot.phase)
       const size = Math.max(1, Math.round(dot.r * dustScale))
-      context.globalAlpha = dot.alpha * twinkle
+      const screenX = (dot.x + driftX) * dustScaleX
+      const screenY = (dot.y + driftY) * dustScaleY
+      const radius =
+        Math.hypot(screenX - width / 2, screenY - height / 2) / cornerDistance
+      const shade =
+        radius < 0.46
+          ? 0
+          : radius < 0.78
+            ? (0.5 * (radius - 0.46)) / 0.32
+            : 0.5 + (0.35 * (radius - 0.78)) / 0.22
+      const boost = Math.min(2.2, 1 / Math.max(0.18, 1 - shade))
+      context.globalAlpha = Math.min(1, dot.alpha * twinkle * boost)
       context.fillRect(
-        Math.round((dot.x + driftX) * dustScaleX - size / 2),
-        Math.round((dot.y + driftY) * dustScaleY - size / 2),
+        Math.round(screenX - size / 2),
+        Math.round(screenY - size / 2),
         size,
         size,
       )
