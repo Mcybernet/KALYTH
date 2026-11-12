@@ -181,6 +181,7 @@
 .badge__dot {
   width: 6px;
   height: 6px;
+  margin-right: 5px;
   border-radius: 50%;
   background: currentColor;
   box-shadow: 0 0 8px currentColor;
