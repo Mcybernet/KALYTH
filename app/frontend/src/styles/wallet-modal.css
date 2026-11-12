@@ -197,3 +197,75 @@
     padding: 12px;
   }
 }
+
+/* ---------------------------------------------------- Wallet dropdown --
+   The connected-wallet menu is a compact, right-anchored panel: 32px rows,
+   hairline separators, one accent rule on top. No gradients, no glow. */
+
+.site-header__actions .wallet-adapter-dropdown {
+  display: flex;
+  align-items: center;
+}
+
+/* The library hard-codes a 48px trigger; the header row only needs 36px. */
+.site-header__actions .wallet-adapter-button {
+  height: 36px !important;
+  line-height: 1 !important;
+}
+
+.wallet-adapter-dropdown-list {
+  top: calc(100% + 8px);
+  right: 0;
+  width: max-content;
+  min-width: 176px;
+  max-width: calc(100vw - 24px);
+  padding: 6px;
+  gap: 0;
+  border: 1px solid var(--color-border);
+  border-top: 2px solid var(--color-primary);
+  border-radius: 0;
+  background: #0a0a0c;
+  box-shadow: none;
+  font-family: var(--font-mono);
+  transition: opacity 120ms ease, visibility 120ms ease;
+}
+
+.wallet-adapter-dropdown-list-active {
+  transform: none;
+}
+
+.wallet-adapter-dropdown-list-item {
+  justify-content: flex-start;
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.wallet-adapter-dropdown-list-item + .wallet-adapter-dropdown-list-item {
+  border-top: 1px solid var(--color-border);
+}
+
+.wallet-adapter-dropdown-list-item:not([disabled]):hover,
+.wallet-adapter-dropdown-list-item:focus-visible {
+  background-color: #15120c;
+  color: var(--color-primary);
+  outline: 1px solid var(--color-primary);
+  outline-offset: -1px;
+}
+
+/* With the navigation in a drawer the actions are the only thing left in the
+   bar, so pin them to the right edge; the menu then lands in the corner. */
+@media (max-width: 1024px) {
+  .site-header__actions {
+    margin-left: auto;
+  }
+}
