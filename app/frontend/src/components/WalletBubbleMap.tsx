@@ -24,11 +24,9 @@ import {
   Maximize2,
   Minimize2,
   Minus,
-  Pause,
   Plus,
   RefreshCw,
   RotateCcw,
-  Sparkles,
   Unlock,
 } from 'lucide-react'
 import { explorerTxUrl, shortenAddress } from '../lib/addresses'
@@ -642,25 +640,10 @@ export function WalletBubbleMap({
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null)
-  const [prefersReducedMotion] = useState(
-    () =>
-      typeof window !== 'undefined' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches,
-  )
-  // The OS preference only sets the default: browsers or platforms that report
-  // reduced motion would otherwise leave the whole map frozen, so the HUD
-  // offers an explicit switch that is remembered across visits.
-  const [motionOverride, setMotionOverride] = useState<boolean | null>(() => {
-    if (typeof window === 'undefined') return null
-    try {
-      const stored = window.localStorage.getItem('klyth.map.motion')
-      return stored === 'on' ? true : stored === 'off' ? false : null
-    } catch {
-      return null
-    }
-  })
-  const animationEnabled = motionOverride ?? !prefersReducedMotion
-  const reduceMotion = !animationEnabled
+  // The map always breathes. Honouring the OS "reduce motion" flag used to
+  // leave the canvas frozen and read as a broken screen, so the bubbles now
+  // animate unconditionally.
+  const reduceMotion = false
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const drawStateRef = useRef<DrawState | null>(null)
@@ -1912,18 +1895,6 @@ export function WalletBubbleMap({
     focusOwner(owner)
   }
 
-  function toggleMotion() {
-    const next = !animationEnabled
-    setMotionOverride(next)
-    dirtyRef.current = true
-    try {
-      window.localStorage.setItem('klyth.map.motion', next ? 'on' : 'off')
-    } catch {
-      // Private mode or a blocked storage API: the switch still works for
-      // this session.
-    }
-  }
-
   function toggleLock() {
     if (lockedOwner) {
       setLockedOwner(null)
@@ -2184,24 +2155,6 @@ export function WalletBubbleMap({
       </div>
 
       <div className="wallet-map__controls">
-        <button
-          type="button"
-          className="icon-button"
-          onClick={toggleMotion}
-          aria-pressed={animationEnabled}
-          aria-label={
-            animationEnabled
-              ? 'Pause the bubble animation'
-              : 'Play the bubble animation'
-          }
-          title={animationEnabled ? 'Animation on' : 'Animation off'}
-        >
-          {animationEnabled ? (
-            <Pause size={13} aria-hidden="true" />
-          ) : (
-            <Sparkles size={13} aria-hidden="true" />
-          )}
-        </button>
         <button
           type="button"
           className="icon-button"

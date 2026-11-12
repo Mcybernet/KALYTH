@@ -253,11 +253,6 @@
   opacity: 0.32;
 }
 
-.wallet-map__controls .icon-button[aria-pressed='true'] {
-  background: rgba(224, 166, 75, 0.16);
-  color: #f3ce8e;
-}
-
 /* ----------------------------------------------------------------- Status -- */
 
 .wallet-map__status {
