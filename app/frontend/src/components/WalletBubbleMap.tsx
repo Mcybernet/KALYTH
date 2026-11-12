@@ -153,21 +153,6 @@ type ViewState = {
 
 type NodeKind = 'Contract' | 'EOA'
 
-type AmbientDot = {
-  x: number
-  y: number
-  r: number
-  alpha: number
-  /** Horizontal drift amplitude, in world units. */
-  driftX: number
-  /** Vertical drift amplitude, in world units. */
-  driftY: number
-  /** Angular drift speed, in radians per second. */
-  speed: number
-  /** Phase offset so no two specks move in lockstep. */
-  phase: number
-}
-
 type DrawState = {
   layout: Layout
   graph: TransferGraph | null
@@ -177,7 +162,6 @@ type DrawState = {
   hoveredEdge: string | null
   selectedEdge: string | null
   reduceMotion: boolean
-  ambientDots: AmbientDot[]
   supernodes: Set<string>
 }
 
@@ -814,24 +798,6 @@ export function WalletBubbleMap({
     [holders],
   )
 
-  const ambientDots = useMemo<AmbientDot[]>(
-    () =>
-      Array.from({ length: 240 }, (_, index) => {
-        const hash = hashString(`klyth-ambient-${index}`)
-        return {
-          x: hash % WIDTH,
-          y: (hash >>> 10) % HEIGHT,
-          r: 0.9 + ((hash >>> 20) % 26) / 10,
-          alpha: 0.24 + ((hash >>> 24) % 30) / 100,
-          driftX: 18 + ((hash >>> 5) % 340) / 10,
-          driftY: 16 + ((hash >>> 13) % 300) / 10,
-          speed: 0.5 + ((hash >>> 17) % 90) / 100,
-          phase: ((hash >>> 21) % 628) / 100,
-        }
-      }),
-    [],
-  )
-
   const edgeStats = useMemo(() => {
     const stats = new Map<string, { count: number; volumeRaw: bigint; peers: Set<string> }>()
     for (const edge of graph?.edges ?? []) {
@@ -902,7 +868,6 @@ export function WalletBubbleMap({
       hoveredEdge,
       selectedEdge,
       reduceMotion,
-      ambientDots,
       supernodes,
     }
     dirtyRef.current = true
@@ -1253,52 +1218,6 @@ export function WalletBubbleMap({
     const fit = fitBox(width, height)
     const view = viewRef.current
     const scale = view.scale || 1
-
-    // Ambient dust floats behind the map, spread across the whole canvas
-    // rather than the fitted map box, so the frame never looks empty. Each
-    // speck drifts and twinkles on its own slow phase, without touching the
-    // bubble simulation.
-    const ambientSeconds = now / 1000
-    const dustScaleX = width / WIDTH
-    const dustScaleY = height / HEIGHT
-    const dustScale = Math.max(0.6, Math.min(dustScaleX, dustScaleY))
-    // The CSS vignette paints up to 85% black over the canvas corners, which
-    // would swallow the dust out there. Compensate so the specks stay readable
-    // right up to the edges of the frame.
-    const cornerDistance = Math.hypot(width / 2, height / 2) || 1
-    context.fillStyle = 'rgb(232, 193, 130)'
-    for (const dot of state.ambientDots) {
-      const driftX = state.reduceMotion
-        ? 0
-        : Math.sin(ambientSeconds * dot.speed + dot.phase) * dot.driftX
-      const driftY = state.reduceMotion
-        ? 0
-        : Math.cos(ambientSeconds * dot.speed * 0.78 + dot.phase * 1.7) *
-          dot.driftY
-      const twinkle = state.reduceMotion
-        ? 1
-        : 0.55 + 0.45 * Math.sin(ambientSeconds * dot.speed * 1.9 + dot.phase)
-      const size = Math.max(1, Math.round(dot.r * dustScale))
-      const screenX = (dot.x + driftX) * dustScaleX
-      const screenY = (dot.y + driftY) * dustScaleY
-      const radius =
-        Math.hypot(screenX - width / 2, screenY - height / 2) / cornerDistance
-      const shade =
-        radius < 0.46
-          ? 0
-          : radius < 0.78
-            ? (0.5 * (radius - 0.46)) / 0.32
-            : 0.5 + (0.35 * (radius - 0.78)) / 0.22
-      const boost = Math.min(2.2, 1 / Math.max(0.18, 1 - shade))
-      context.globalAlpha = Math.min(1, dot.alpha * twinkle * boost)
-      context.fillRect(
-        Math.round(screenX - size / 2),
-        Math.round(screenY - size / 2),
-        size,
-        size,
-      )
-    }
-    context.globalAlpha = 1
 
     context.save()
     context.translate(fit.offsetX, fit.offsetY)
