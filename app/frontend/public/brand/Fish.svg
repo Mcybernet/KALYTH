@@ -1,9 +1,9 @@
 <svg width="160" height="161" viewBox="0 0 160 161" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M58.0833 52.9515C63.378 45.3525 70.7572 40.9313 80.2211 39.688C80.4569 45.0577 83.0185 50.6149 87.9059 56.3597" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" stroke="#123B50"/>
-<path d="M66.1192 109.447C71.6483 116.877 78.4251 120.478 86.4496 120.249L87.8708 106.002" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" stroke="#123B50"/>
-<path d="M109 73.5L136 52.0008C137.333 51.3341 137.667 52.3341 137 55.0008L127 81.0008L137 107.001C137.667 109.667 137 110.334 135 109.001L109 88.0008" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" stroke="#123B50"/>
-<path d="M23 81C32 63 48 53 68 53C89 53 104 64 113 81C104 98 89 109 68 109C48 109 32 99 23 81Z" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" stroke="#123B50"/>
-<path d="M58 67C64.6667 76.3333 64.6667 85.6667 58 95" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" stroke="#123B50"/>
-<path d="M78 81L90 89C86 92.3333 81.6667 93.3333 77 92" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" stroke="#123B50"/>
+<path d="M58.0833 52.9515C63.378 45.3525 70.7572 40.9313 80.2211 39.688C80.4569 45.0577 83.0185 50.6149 87.9059 56.3597" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke="#123B50"/>
+<path d="M66.1192 109.447C71.6483 116.877 78.4251 120.478 86.4496 120.249L87.8708 106.002" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke="#123B50"/>
+<path d="M109 73.5L136 52.0008C137.333 51.3341 137.667 52.3341 137 55.0008L127 81.0008L137 107.001C137.667 109.667 137 110.334 135 109.001L109 88.0008" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke="#123B50"/>
+<path d="M23 81C32 63 48 53 68 53C89 53 104 64 113 81C104 98 89 109 68 109C48 109 32 99 23 81Z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke="#123B50"/>
+<path d="M58 67C64.6667 76.3333 64.6667 85.6667 58 95" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke="#123B50"/>
+<path d="M78 81L90 89C86 92.3333 81.6667 93.3333 77 92" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke="#123B50"/>
 <path d="M46 74C46 74.7956 45.6839 75.5587 45.1213 76.1213C44.5587 76.6839 43.7956 77 43 77C42.2044 77 41.4413 76.6839 40.8787 76.1213C40.3161 75.5587 40 74.7956 40 74C40 73.2044 40.3161 72.4413 40.8787 71.8787C41.4413 71.3161 42.2044 71 43 71C43.7956 71 44.5587 71.3161 45.1213 71.8787C45.6839 72.4413 46 73.2044 46 74Z" fill="#123B50"/>
 </svg>

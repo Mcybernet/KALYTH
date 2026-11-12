@@ -17,7 +17,7 @@ type TierMark = {
 
 const TIER_MARKS: Record<HolderTierKey, TierMark> = {
   whale: {
-    transform: 'translate(12 12) scale(0.177815) translate(-81.05 -79.1)',
+    transform: 'translate(12 12) scale(0.1778) translate(-81.055 -79.115)',
     strokeWidth: 10.97,
     content: (
       <>
@@ -37,12 +37,12 @@ const TIER_MARKS: Record<HolderTierKey, TierMark> = {
     ),
   },
   shark: {
-    transform: 'translate(12 12) scale(0.173554) translate(-79.5 -78)',
-    strokeWidth: 11.24,
+    transform: 'translate(12 12) scale(0.166008) translate(-76.75 -78)',
+    strokeWidth: 11.75,
     content: (
       <>
         <path
-          d="M19 82C30 67 48 61 65 62L81 32L89 64C99 67 107 73 114 76L140 42L133 82L140 109L115 92C105 100 94 104 81 104V124L63 103C44 102 29 94 19 82Z"
+          d="M13.5 82.5C24.5 67.5 48 61 65 62L81 32L89 64C99 67 107 73 114 76L140 42L130 83L140 109L115 92C105 100 94 104 81 104V124L63 103C44 102 23.5 94.5 13.5 82.5Z"
           fill="currentColor"
           fillOpacity={0.22}
         />
@@ -53,7 +53,7 @@ const TIER_MARKS: Record<HolderTierKey, TierMark> = {
     ),
   },
   dolphin: {
-    transform: 'translate(12 12) scale(0.171849) translate(-79.9 -80.15)',
+    transform: 'translate(12 12) scale(0.171849) translate(-79.9 -80.125)',
     strokeWidth: 11.35,
     content: (
       <>
@@ -68,8 +68,8 @@ const TIER_MARKS: Record<HolderTierKey, TierMark> = {
     ),
   },
   fish: {
-    transform: 'translate(12 12) scale(0.183727) translate(-80.15 -80)',
-    strokeWidth: 10.61,
+    transform: 'translate(12 12) scale(0.183679) translate(-80.165 -79.975)',
+    strokeWidth: 10.62,
     content: (
       <>
         <path d="M58.0833 52.9515C63.378 45.3525 70.7572 40.9313 80.2211 39.688C80.4569 45.0577 83.0185 50.6149 87.9059 56.3597" />
@@ -91,13 +91,13 @@ const TIER_MARKS: Record<HolderTierKey, TierMark> = {
     ),
   },
   crab: {
-    transform: 'translate(12 12) scale(0.164191) translate(-80.05 -82.5)',
-    strokeWidth: 11.88,
+    transform: 'translate(12 12) scale(0.164242) translate(-80 -82.5)',
+    strokeWidth: 11.87,
     content: (
       <>
-        <path d="M48 89L29 84L18 93M46 101L28 104L19 115M54 112L38 121L32 133" />
-        <path d="M112 89L131 84L142 93M114 101L132 104L141 115M106 112L122 121L128 133" />
-        <path d="M53 81C41 80.3333 34 75.3333 32 66M107 81C119 80.3333 126 75.3333 128 66" />
+        <path d="M48.5 89L29 84L18 93M48 100.5L28 104L19 115M55 111.5L38 121L32 133" />
+        <path d="M112 89L131 84L142 93M112 100.5L132 104L141 115M105.5 111.5L122 121L128 133" />
+        <path d="M52.5 81C40.5 80.3333 34 75.3333 32 66M107.5 81C119.5 80.3333 126 75.3333 128 66" />
         <path
           d="M18.0018 33C14.0018 44 16.0018 60 26.0018 65C37.0018 69 46.0018 58 43.0018 46L39.0018 32L31.0018 47L18.0018 33Z"
           fill="currentColor"
@@ -123,7 +123,7 @@ const TIER_MARKS: Record<HolderTierKey, TierMark> = {
     ),
   },
   shrimp: {
-    transform: 'translate(12 12) scale(0.17341) translate(-76.35 -77)',
+    transform: 'translate(12 12) scale(0.173396) translate(-76.375 -77)',
     strokeWidth: 11.25,
     content: (
       <>
@@ -137,9 +137,9 @@ const TIER_MARKS: Record<HolderTierKey, TierMark> = {
           fill="currentColor"
           fillOpacity={0.22}
         />
-        <path d="M114 61C111.333 68.3333 107.333 74.6667 102 80" />
+        <path d="M114.5 59C111.833 66.3333 106.833 75.6667 101.5 81" />
         <path d="M133 80C125.667 80 118.667 83.3333 112 90" />
-        <path d="M135 107C128.333 104.333 122 102.667 116 102" />
+        <path d="M135 107.5C128.333 104.833 119.5 102.167 113.5 101.5" />
         <path d="M90 113L75 105C71 109 70 113.667 72 119C72.6667 124.333 75.6667 128.333 81 131L96 126" />
         <path d="M73 118L92 120" />
         <path
