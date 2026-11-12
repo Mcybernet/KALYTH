@@ -1037,6 +1037,23 @@ a:hover {
 }
 
 @media (max-width: 620px) {
+  /* Keep the title full-width instead of letting a wide action cluster
+     squeeze it into a narrow column; the actions wrap onto their own row. */
+  .card__header {
+    flex-wrap: wrap;
+    gap: 10px 12px;
+  }
+
+  .card__header > :first-child {
+    flex: 1 1 12rem;
+    min-width: 0;
+  }
+
+  .card__actions {
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
+
   .hero-min__title {
     font-size: clamp(42px, 14vw, 64px);
   }
